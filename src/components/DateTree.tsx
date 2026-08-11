@@ -56,6 +56,32 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
     });
   }, []);
 
+  // All year/month/day node keys. "Expand all" opens the calendar down to the
+  // day level (revealing every kind group) without eagerly loading the
+  // individual asset lists under each kind — that stays lazy on click.
+  const allExpandableKeys = useMemo(() => {
+    if (!tree) return [];
+    const keys: string[] = [];
+    for (const yn of tree.years) {
+      const yKey = `y:${yn.year}`;
+      keys.push(yKey);
+      for (const mn of yn.months) {
+        const mKey = `${yKey}:m:${mn.month}`;
+        keys.push(mKey);
+        for (const dn of mn.days) {
+          keys.push(`${mKey}:d:${dn.day}`);
+        }
+      }
+    }
+    return keys;
+  }, [tree]);
+
+  const expandAll = useCallback(
+    () => setExpanded(new Set(allExpandableKeys)),
+    [allExpandableKeys]
+  );
+  const collapseAll = useCallback(() => setExpanded(new Set()), []);
+
   // Reset cached asset lists whenever the tree identity (root/range) changes.
   useEffect(() => {
     setAssetsByKey(new Map());
@@ -211,6 +237,7 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
   );
 
   const items = virtualizer.getVirtualItems();
+  const treeInteractive = !searchResults && !!tree && tree.total > 0;
 
   return (
     <>
@@ -221,6 +248,32 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <div className="tree-tools">
+          <button
+            className="icon-btn"
+            title="Expand all"
+            aria-label="Expand all"
+            disabled={!treeInteractive}
+            onClick={expandAll}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 8l4-4 4 4" />
+              <path d="M8 16l4 4 4-4" />
+            </svg>
+          </button>
+          <button
+            className="icon-btn"
+            title="Collapse all"
+            aria-label="Collapse all"
+            disabled={!treeInteractive}
+            onClick={collapseAll}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 9l4 4 4-4" />
+              <path d="M8 15l4-4 4 4" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {searchResults && (
