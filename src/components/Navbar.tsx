@@ -76,6 +76,16 @@ export function Navbar({
 
       {root && (
         <>
+          {showFilters && (
+            <>
+              <FiltersMenu filter={filter} onChange={onFilter} />
+              <CalendarPicker
+                range={{ start: filter.start, end: filter.end }}
+                onChange={(r) => onFilter({ ...filter, start: r.start, end: r.end })}
+              />
+            </>
+          )}
+
           <button className="btn" onClick={onSlideshow} title="Play a slideshow">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
               <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z" />
@@ -94,15 +104,6 @@ export function Navbar({
               <path d="M12 12.5l.9 1.9 2.1.3-1.5 1.5.35 2.1-1.85-1-1.85 1 .35-2.1L9 14.7l2.1-.3z" />
             </svg>
           </button>
-          {showFilters && (
-            <>
-              <FiltersMenu filter={filter} onChange={onFilter} />
-              <CalendarPicker
-                range={{ start: filter.start, end: filter.end }}
-                onChange={(r) => onFilter({ ...filter, start: r.start, end: r.end })}
-              />
-            </>
-          )}
         </>
       )}
 
