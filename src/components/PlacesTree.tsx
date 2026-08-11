@@ -7,8 +7,18 @@ import { AssetThumb } from "./AssetThumb";
 const ROW_H = 30;
 const NOLOC = "__noloc__";
 
+// ISO 3166-1 alpha-2 → flag emoji (two regional-indicator letters). Falls back
+// to a neutral flag for unknown/missing codes.
+function flagEmoji(code: string | null | undefined): string {
+  if (!code || code.length !== 2 || !/^[a-zA-Z]{2}$/.test(code)) return "🏳️";
+  const base = 0x1f1e6; // regional indicator symbol 'A'
+  return String.fromCodePoint(
+    ...[...code.toUpperCase()].map((c) => base + (c.charCodeAt(0) - 65))
+  );
+}
+
 type Row =
-  | { kind: "country"; key: string; country: string; count: number; depth: 0 }
+  | { kind: "country"; key: string; country: string; code: string | null; count: number; depth: 0 }
   | { kind: "city"; key: string; country: string; city: string; count: number; depth: 1 }
   | { kind: "noloc"; key: string; count: number; depth: 0 }
   | { kind: "asset"; key: string; depth: number; asset: Asset }
@@ -126,7 +136,7 @@ export function PlacesTree({
     const out: Row[] = [];
     for (const co of places.countries) {
       const cKey = `C:${co.country}`;
-      out.push({ kind: "country", key: cKey, country: co.country, count: co.count, depth: 0 });
+      out.push({ kind: "country", key: cKey, country: co.country, code: co.code, count: co.count, depth: 0 });
       if (!expanded.has(cKey)) continue;
       for (const ci of co.cities) {
         const ciKey = `${cKey}:${ci.city}`;
@@ -343,7 +353,11 @@ export function PlacesTree({
                 ) : (
                   <>
                     <span className="kind-ico">
-                      {row.kind === "country" ? "🏳️" : row.kind === "noloc" ? "🚫" : "📍"}
+                      {row.kind === "country"
+                        ? flagEmoji(row.code)
+                        : row.kind === "noloc"
+                        ? "🚫"
+                        : "📍"}
                     </span>
                     <span className="tree-label">
                       {row.kind === "noloc" ? "No location" : row.kind === "country" ? row.country : row.city}

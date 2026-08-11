@@ -69,6 +69,7 @@ export interface PlaceCity {
 
 export interface PlaceCountry {
   country: string;
+  code: string | null; // ISO alpha-2, for the flag emoji
   count: number;
   cities: PlaceCity[];
 }

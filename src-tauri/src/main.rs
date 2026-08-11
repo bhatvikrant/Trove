@@ -729,6 +729,7 @@ struct PlaceCity {
 #[serde(rename_all = "camelCase")]
 struct PlaceCountry {
     country: String,
+    code: Option<String>, // ISO alpha-2, for the flag emoji
     count: i64,
     cities: Vec<PlaceCity>,
 }
@@ -777,6 +778,7 @@ fn get_places(filter: Option<Filter>, state: State<AppState>) -> Result<Places, 
         located_total += cnt;
         if countries.last().map(|c| c.country.as_str()) != Some(country.as_str()) {
             countries.push(PlaceCountry {
+                code: places::alpha2_for_name(&country),
                 country: country.clone(),
                 count: 0,
                 cities: Vec::new(),
