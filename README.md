@@ -14,6 +14,7 @@ Built with **Tauri v2** (Rust) + **React/TypeScript**. Uses macOS's native WebKi
 - **Background indexing** with a local **SQLite** cache and a disk **thumbnail cache** (via `sips` / `ffmpeg` / QuickLook), so re-opening is instant.
 - Reveal any asset in Finder.
 - **Keyboard navigation** in the tree — `↑`/`↓` move, `→` expands (or steps into children), `←` collapses (or hops to the parent), `Enter`/`Space` opens, `Home`/`End` jump to the first/last row. Arrowing onto an asset previews it live.
+- **Search shortcuts** — `/` or `⌘F` focuses search; `↓`/`Enter` dives from the search box into the tree; `Esc` clears the query (then blurs to the tree). Everything in the sidebar is reachable by `Tab` with visible focus rings.
 
 ## Requirements
 

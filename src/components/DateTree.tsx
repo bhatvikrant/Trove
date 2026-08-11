@@ -72,6 +72,26 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
   // Key of the keyboard-focused row (stable across expand/collapse re-flattening).
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Global shortcuts: Cmd/Ctrl+F or "/" focuses the search box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing =
+        !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const toggle = useCallback((nodeKey: string) => {
     setExpanded((prev) => {
@@ -390,10 +410,22 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
     <>
       <div className="sidebar-head">
         <input
+          ref={searchRef}
           className="sidebar-search"
-          placeholder="Search by name…"
+          placeholder="Search by name…   ( / )"
+          aria-label="Search assets by name"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              if (query) setQuery("");
+              else scrollRef.current?.focus();
+            } else if (e.key === "ArrowDown" || e.key === "Enter") {
+              e.preventDefault();
+              scrollRef.current?.focus();
+              focusRow(0);
+            }
+          }}
         />
         <button
           className="icon-btn"
@@ -513,6 +545,7 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
                       {showSubtreeBtn && (
                         <button
                           className="subtree-btn"
+                          tabIndex={-1}
                           title={subtreeFully ? "Collapse this branch" : "Expand this branch"}
                           aria-label={subtreeFully ? "Collapse this branch" : "Expand this branch"}
                           onKeyDown={(e) => e.stopPropagation()}

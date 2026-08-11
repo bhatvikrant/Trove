@@ -240,6 +240,7 @@ button {
 }
 .sidebar-search:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .icon-btn {
   border: 1px solid var(--border);
@@ -260,6 +261,11 @@ button {
 .icon-btn:disabled {
   opacity: 0.35;
   cursor: default;
+}
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--text);
 }
 .tree-scroll {
   flex: 1;
