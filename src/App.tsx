@@ -123,6 +123,12 @@ export default function App() {
   const filterRef = useRef(filter);
   filterRef.current = filter;
 
+  // The folder drop-to-open is only for the welcome screen; a ref lets the
+  // once-registered drag handler see whether a folder is already open (so it
+  // doesn't collide with in-app dragging, e.g. merging faces).
+  const rootRef = useRef(root);
+  rootRef.current = root;
+
   const refreshTree = useCallback(async () => {
     setLoadingTree(true);
     try {
@@ -360,6 +366,11 @@ export default function App() {
     try {
       getCurrentWebview()
         .onDragDropEvent((event) => {
+          // Only active on the welcome screen; ignore once a folder is open.
+          if (rootRef.current) {
+            setDragging(false);
+            return;
+          }
           const p = event.payload;
           if (p.type === "enter" || p.type === "over") setDragging(true);
           else if (p.type === "leave") setDragging(false);
@@ -540,7 +551,7 @@ export default function App() {
         )}
       </div>
 
-      {dragging && (
+      {dragging && !root && (
         <div className="drop-overlay">
           <div className="drop-card">
             <div className="drop-glyph">📥</div>
