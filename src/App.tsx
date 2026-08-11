@@ -393,6 +393,17 @@ export default function App() {
     await rescan();
   }, [root]);
 
+  // Switching lens (Date / Places / People) clears the current preview, since
+  // the selected asset may not exist in the new view.
+  const handleLens = useCallback(
+    (l: Lens) => {
+      if (l === lens) return;
+      setLens(l);
+      setSelected(null);
+    },
+    [lens]
+  );
+
   // Return to the welcome screen (keeps the folder indexed for a quick reopen).
   const handleHome = useCallback(() => {
     setRootPath(null);
@@ -467,7 +478,7 @@ export default function App() {
         {root ? (
           <>
             <div className="sidebar" style={{ width: sidebarW }}>
-              <LensSwitcher lens={lens} onLens={setLens} />
+              <LensSwitcher lens={lens} onLens={handleLens} />
               {indexing && (
                 <div className="index-status">
                   <span className="spinner" />
