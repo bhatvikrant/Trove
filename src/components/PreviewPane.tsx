@@ -234,73 +234,100 @@ export function PreviewPane({
       </div>
 
       <div className="preview-info">
-        {renaming ? (
-          <input
-            className="rename-input rename-input-lg"
-            value={nameValue}
-            autoFocus
-            onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => setNameValue(e.target.value)}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Enter") {
-                skipBlur.current = true;
+        <div className="pi-meta">
+          {renaming ? (
+            <input
+              className="rename-input rename-input-lg"
+              value={nameValue}
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => setNameValue(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  skipBlur.current = true;
+                  commitRename();
+                } else if (e.key === "Escape") {
+                  skipBlur.current = true;
+                  setRenaming(false);
+                }
+              }}
+              onBlur={() => {
+                if (skipBlur.current) {
+                  skipBlur.current = false;
+                  return;
+                }
                 commitRename();
-              } else if (e.key === "Escape") {
-                skipBlur.current = true;
-                setRenaming(false);
-              }
-            }}
-            onBlur={() => {
-              if (skipBlur.current) {
-                skipBlur.current = false;
-                return;
-              }
-              commitRename();
-            }}
-          />
-        ) : (
-          <span
-            className="name"
-            title={`${asset.path}\n(double-click to rename)`}
-            onDoubleClick={() => {
-              setNameValue(asset.name);
-              setRenaming(true);
-            }}
+              }}
+            />
+          ) : (
+            <span
+              className="name"
+              title={`${asset.path}\n(double-click to rename)`}
+              onDoubleClick={() => {
+                setNameValue(asset.name);
+                setRenaming(true);
+              }}
+            >
+              {asset.name}
+            </span>
+          )}
+          <span className="meta">{fmtDate(asset.captureTs)}</span>
+          <span className="meta">{humanSize(asset.size)}</span>
+          {asset.ext && <span className="meta">{asset.ext.toUpperCase()}</span>}
+        </div>
+
+        <div className="pi-actions">
+          {position && (
+            <span className="meta preview-pos">
+              {position.index + 1} of {position.total.toLocaleString()}
+            </span>
+          )}
+          <button
+            className={`btn icon star-btn ${asset.favorite ? "on" : ""}`}
+            title={asset.favorite ? "Remove from favorites" : "Add to favorites"}
+            aria-label="Toggle favorite"
+            onClick={() => onToggleFavorite(asset)}
           >
-            {asset.name}
-          </span>
-        )}
-        <span className="meta">{fmtDate(asset.captureTs)}</span>
-        <span className="meta">{humanSize(asset.size)}</span>
-        {asset.ext && <span className="meta">{asset.ext.toUpperCase()}</span>}
-        <span className="grow" />
-        {position && (
-          <span className="meta preview-pos">
-            {position.index + 1} of {position.total.toLocaleString()}
-          </span>
-        )}
-        <button
-          className={`btn icon star-btn ${asset.favorite ? "on" : ""}`}
-          title={asset.favorite ? "Remove from favorites" : "Add to favorites"}
-          aria-label="Toggle favorite"
-          onClick={() => onToggleFavorite(asset)}
-        >
-          {asset.favorite ? "★" : "☆"}
-        </button>
-        <button
-          className="btn"
-          title="Copy full path"
-          onClick={() => navigator.clipboard?.writeText(asset.path)}
-        >
-          Copy path
-        </button>
-        <button className="btn" onClick={() => revealInFinder(asset.path)}>
-          Reveal in Finder
-        </button>
-        <button className="btn danger" onClick={() => onDelete(asset)}>
-          Delete
-        </button>
+            {asset.favorite ? "★" : "☆"}
+          </button>
+          <button
+            className="btn pi-btn"
+            title="Copy full path"
+            aria-label="Copy full path"
+            onClick={() => navigator.clipboard?.writeText(asset.path)}
+          >
+            <svg className="pi-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="11" height="11" rx="2" />
+              <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+            </svg>
+            <span className="pi-label">Copy path</span>
+          </button>
+          <button
+            className="btn pi-btn"
+            title="Reveal in Finder"
+            aria-label="Reveal in Finder"
+            onClick={() => revealInFinder(asset.path)}
+          >
+            <svg className="pi-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+            </svg>
+            <span className="pi-label">Reveal in Finder</span>
+          </button>
+          <button
+            className="btn danger pi-btn"
+            title="Delete"
+            aria-label="Delete"
+            onClick={() => onDelete(asset)}
+          >
+            <svg className="pi-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18" />
+              <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            </svg>
+            <span className="pi-label">Delete</span>
+          </button>
+        </div>
       </div>
     </div>
   );
