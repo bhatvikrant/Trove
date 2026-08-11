@@ -13,6 +13,7 @@ import { PlacesMap } from "./components/PlacesMap";
 import { PeopleTree } from "./components/PeopleTree";
 import { PeopleGrid } from "./components/PeopleGrid";
 import { SettingsModal } from "./components/SettingsModal";
+import { StatusBar } from "./components/StatusBar";
 import {
   deleteAsset,
   getDateTree,
@@ -466,33 +467,11 @@ export default function App() {
 
       {root && <FilterChips filter={filter} onChange={setFilter} />}
 
-      <div className={`progress ${indexing && root ? "" : "hidden"}`}>
-        {progressPct === null ? (
-          <div className="bar" style={{ width: "100%", opacity: 0.4 }} />
-        ) : (
-          <div className="bar" style={{ width: `${progressPct}%` }} />
-        )}
-      </div>
-
       <div className="body">
         {root ? (
           <>
             <div className="sidebar" style={{ width: sidebarW }}>
               <LensSwitcher lens={lens} onLens={handleLens} />
-              {indexing && (
-                <div className="index-status">
-                  <span className="spinner" />
-                  Indexing… {progress?.indexed.toLocaleString()} assets
-                  {progress?.total ? ` of ~${progress.total.toLocaleString()}` : ""}
-                </div>
-              )}
-              {!indexing && vision && (
-                <div className="index-status">
-                  <span className="spinner" />
-                  Analyzing photos… {vision.processed.toLocaleString()} /{" "}
-                  {vision.total.toLocaleString()}
-                </div>
-              )}
               {lens === "date" ? (
                 <DateTree
                   tree={tree}
@@ -562,6 +541,16 @@ export default function App() {
           />
         )}
       </div>
+
+      {root && (
+        <StatusBar
+          indexing={indexing}
+          progress={progress}
+          progressPct={progressPct}
+          vision={vision}
+          total={total}
+        />
+      )}
 
       {dragging && !root && (
         <div className="drop-overlay">
