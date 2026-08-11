@@ -80,6 +80,10 @@ fn run(
 ) -> rusqlite::Result<()> {
     let mut conn = db::open(db_path)?;
 
+    // Seed favorites + face names from a portable sidecar (e.g. this folder was
+    // curated on another Mac). Harmless when there's no sidecar.
+    crate::sidecar::import_curation(&conn, root);
+
     // ---- Phase 1: walk the tree and collect media files (fast, no parsing).
     let mut found: Vec<Found> = Vec::new();
     let mut scanned: u64 = 0;
@@ -267,6 +271,12 @@ fn run(
         [],
     )?;
 
+    // ---- Restore cached Vision analysis from the portable sidecar for any
+    // unchanged file, so it isn't re-analyzed here or on another machine. Then
+    // reattach names to the restored clusters (in case no new media follows).
+    crate::sidecar::restore_analysis(&mut conn, root);
+    reattach_names(&conn)?;
+
     // Record the final asset count for this folder's recents entry.
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM assets", [], |r| r.get(0))
@@ -293,10 +303,18 @@ fn run(
     );
 
     // ---- Second pass: enrich images with Vision scene labels + OCR text.
+    let mut analyzed = 0i64;
     if let Some(helper) = vision_helper.as_ref() {
         if helper.exists() && !superseded(generation, my_gen) {
-            let _ = enrich_vision(app, &mut conn, generation, my_gen, helper);
+            analyzed = enrich_vision(app, &mut conn, generation, my_gen, helper).unwrap_or(0);
         }
+    }
+
+    // Refresh the portable cache only when new media was actually analyzed
+    // (avoids rewriting the whole cache on every incremental launch). Favorites
+    // and names are written through by their own commands, not here.
+    if analyzed > 0 && !superseded(generation, my_gen) && crate::sidecar::enabled(&conn) {
+        crate::sidecar::export_analysis(&conn, root);
     }
     Ok(())
 }
@@ -327,7 +345,7 @@ fn enrich_vision(
     generation: &Arc<AtomicU64>,
     my_gen: u64,
     helper: &Path,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<i64> {
     let total: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM assets WHERE kind='image' AND vision_done=0",
@@ -336,7 +354,7 @@ fn enrich_vision(
         )
         .unwrap_or(0);
     if total == 0 {
-        return Ok(());
+        return Ok(0);
     }
     // OCR quality setting: "accurate" (default) unless the user chose "fast".
     let accurate = conn
@@ -348,7 +366,7 @@ fn enrich_vision(
     let mut processed = 0i64;
     loop {
         if superseded(generation, my_gen) {
-            return Ok(());
+            return Ok(processed);
         }
         let batch: Vec<(i64, String)> = {
             let mut stmt = conn.prepare(
@@ -399,7 +417,7 @@ fn enrich_vision(
         cluster_faces(conn)?;
     }
     emit_vision(app, total, total, true);
-    Ok(())
+    Ok(processed)
 }
 
 /// Greedy incremental face clustering: each unclustered face joins the nearest

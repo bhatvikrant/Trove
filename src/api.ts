@@ -72,6 +72,11 @@ export async function setVisionQuality(quality: VisionQuality): Promise<void> {
   await invoke("set_vision_quality", { quality });
 }
 
+/** Toggle writing the portable `.trove` sidecar into the open folder. */
+export async function setStoreInFolder(enabled: boolean): Promise<void> {
+  await invoke("set_store_in_folder", { enabled });
+}
+
 /** Re-scan the current root for new/changed/removed files. */
 export async function rescan(): Promise<void> {
   await invoke("rescan");

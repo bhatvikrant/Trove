@@ -5,6 +5,7 @@ mod db;
 mod indexer;
 mod metadata;
 mod places;
+mod sidecar;
 mod thumbs;
 mod vision;
 
@@ -184,6 +185,28 @@ fn start_indexing(state: &AppState, app: &tauri::AppHandle, root: PathBuf) {
         my_gen,
         state.vision_helper.clone(),
     );
+}
+
+/// Write the open folder's portable sidecar off the UI thread. `full` also
+/// refreshes the (large) analysis cache; otherwise just favorites + names.
+/// No-op when no folder is open, the sidecar is disabled, or it can't be
+/// written (e.g. a read-only volume) — the central DB still holds everything.
+fn sync_sidecar(state: &AppState, full: bool) {
+    let Some(root) = state.root.lock().unwrap().clone() else {
+        return;
+    };
+    let db_path = state.db_path.clone();
+    std::thread::spawn(move || {
+        if let Ok(conn) = db::open(&db_path) {
+            if !sidecar::enabled(&conn) {
+                return;
+            }
+            let _ = sidecar::export_curation(&conn, &root);
+            if full {
+                sidecar::export_analysis(&conn, &root);
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -621,6 +644,8 @@ fn set_favorite(id: i64, favorite: bool, state: State<AppState>) -> Result<(), S
         )
         .map_err(e2s)?;
     }
+    drop(conn);
+    sync_sidecar(state.inner(), false);
     Ok(())
 }
 
@@ -628,6 +653,7 @@ fn set_favorite(id: i64, favorite: bool, state: State<AppState>) -> Result<(), S
 #[serde(rename_all = "camelCase")]
 struct Settings {
     vision_quality: String, // "accurate" | "fast"
+    store_in_folder: bool,  // write the portable .trove sidecar into the folder
 }
 
 #[tauri::command]
@@ -638,7 +664,29 @@ fn get_settings(state: State<AppState>) -> Result<Settings, String> {
             r.get::<_, String>(0)
         })
         .unwrap_or_else(|_| "accurate".into());
-    Ok(Settings { vision_quality })
+    Ok(Settings {
+        vision_quality,
+        store_in_folder: sidecar::enabled(&conn),
+    })
+}
+
+/// Toggle whether Trove writes its portable `.trove` sidecar into the open
+/// folder. Turning it on immediately writes the current state out.
+#[tauri::command]
+fn set_store_in_folder(enabled: bool, state: State<AppState>) -> Result<(), String> {
+    {
+        let conn = state.db.lock().unwrap();
+        conn.execute(
+            "INSERT INTO meta(k,v) VALUES('sidecar_enabled',?1)
+             ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+            [if enabled { "1" } else { "0" }],
+        )
+        .map_err(e2s)?;
+    }
+    if enabled {
+        sync_sidecar(state.inner(), true);
+    }
+    Ok(())
 }
 
 /// Change the analysis (OCR) quality and re-analyze photos with the new setting.
@@ -932,6 +980,9 @@ fn merge_people(source: i64, target: i64, state: State<AppState>) -> Result<(), 
         .map_err(e2s)?;
     // The source's durable labels (path-keyed) now belong to the target.
     record_cluster_label(&conn, target).map_err(e2s)?;
+    drop(conn);
+    // Names changed and cluster assignments changed -> refresh both sidecars.
+    sync_sidecar(state.inner(), true);
     Ok(())
 }
 
@@ -948,6 +999,8 @@ fn rename_person(cluster_id: i64, name: String, state: State<AppState>) -> Resul
     .map_err(e2s)?;
     // Persist by face position so the name survives re-indexing.
     record_cluster_label(&conn, cluster_id).map_err(e2s)?;
+    drop(conn);
+    sync_sidecar(state.inner(), false);
     Ok(())
 }
 
@@ -1068,6 +1121,12 @@ fn delete_asset(path: String, state: State<AppState>) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
     conn.execute("DELETE FROM assets WHERE path=?1", [&path])
         .map_err(e2s)?;
+    // Drop the file's durable state so it can't be re-imported later.
+    let _ = conn.execute("DELETE FROM favorites WHERE path=?1", [&path]);
+    let _ = conn.execute("DELETE FROM named_faces WHERE path=?1", [&path]);
+    drop(conn);
+    // Prune the deleted asset from the portable cache too.
+    sync_sidecar(state.inner(), true);
     Ok(())
 }
 
@@ -1220,6 +1279,7 @@ fn main() {
             list_place_assets,
             get_settings,
             set_vision_quality,
+            set_store_in_folder,
             get_people,
             list_person_assets,
             rename_person,

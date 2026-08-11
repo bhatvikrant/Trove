@@ -55,6 +55,7 @@ export type VisionQuality = "accurate" | "fast";
 
 export interface Settings {
   visionQuality: VisionQuality;
+  storeInFolder: boolean;
 }
 
 export type Lens = "date" | "places" | "people";

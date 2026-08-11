@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getSettings, setVisionQuality } from "../api";
+import { getSettings, setStoreInFolder, setVisionQuality } from "../api";
 import type { VisionQuality } from "../types";
 import { showToast } from "../toast";
 
@@ -7,11 +7,15 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   // `null` until the saved setting loads, so we don't flash the first option
   // as selected and then jump to the real one.
   const [quality, setQuality] = useState<VisionQuality | null>(null);
+  const [storeInFolder, setStoreInFolderState] = useState<boolean | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getSettings()
-      .then((s) => setQuality(s.visionQuality))
+      .then((s) => {
+        setQuality(s.visionQuality);
+        setStoreInFolderState(s.storeInFolder);
+      })
       .catch(() => {});
   }, []);
 
@@ -57,6 +61,17 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     setVisionQuality(q).catch(() => {});
     showToast(
       q === "fast" ? "Analysis set to Fast" : "Analysis set to Best accuracy",
+      { kind: "success" }
+    );
+  };
+
+  const toggleStore = (next: boolean) => {
+    setStoreInFolderState(next);
+    setStoreInFolder(next).catch(() => {});
+    showToast(
+      next
+        ? "Trove will store its data inside the folder"
+        : "Trove will keep its data on this Mac only",
       { kind: "success" }
     );
   };
@@ -116,6 +131,31 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             <p className="set-note">
               Changing this re-analyzes your photos in the background.
             </p>
+          </section>
+
+          <section className="set-sec">
+            <h3>Portable folder data</h3>
+            <p className="set-desc">
+              Store favorites, people names, and analysis results in a hidden{" "}
+              <code>.trove</code> folder inside your media folder. The folder
+              then carries its own data — open it on another Mac and everything
+              is restored, with no re-analysis of unchanged photos.
+            </p>
+            <label className={`set-toggle ${storeInFolder ? "on" : ""}`}>
+              <input
+                type="checkbox"
+                checked={!!storeInFolder}
+                disabled={storeInFolder === null}
+                onChange={(e) => toggleStore(e.target.checked)}
+              />
+              <span className="set-opt-body">
+                <span className="set-opt-title">Store data inside the folder</span>
+                <span className="set-opt-sub">
+                  Off keeps everything on this Mac only. Names travel with the
+                  folder, so sharing it shares who you've tagged.
+                </span>
+              </span>
+            </label>
           </section>
         </div>
       </div>
