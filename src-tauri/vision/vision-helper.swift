@@ -1,36 +1,51 @@
 // macOS Vision CLI for Trove. Two modes:
-//   vision-helper <image-path>     → one JSON object for that image
-//   vision-helper                  → reads image paths from stdin (one per line),
-//                                     prints one JSON line per image
+//   vision-helper <image-path>   → one JSON object for that image
+//   vision-helper                → read image paths from stdin (one per line),
+//                                  process them concurrently (all cores),
+//                                  print one JSON line per image (any order)
 // JSON: {"path":"…","labels":[{"label":"…","confidence":0.9}],"text":"…"}
-// Batch/stdin mode loads the Vision models once and amortizes them over many images.
 import Foundation
+import ImageIO
 import Vision
-import AppKit
+
+let outLock = NSLock()
+let MAX_DIM = 2560 // downsample cap — plenty for classification and most OCR
 
 func emit(_ obj: [String: Any]) {
-    if let data = try? JSONSerialization.data(withJSONObject: obj),
-        let s = String(data: data, encoding: .utf8) {
-        print(s)
-    } else {
-        print("{}")
-    }
-    fflush(stdout)
+    guard let data = try? JSONSerialization.data(withJSONObject: obj),
+        let s = String(data: data, encoding: .utf8)
+    else { return }
+    outLock.lock()
+    print(s)
+    outLock.unlock()
 }
 
-let classify = VNClassifyImageRequest()
-let ocr = VNRecognizeTextRequest()
-ocr.recognitionLevel = .accurate
-ocr.usesLanguageCorrection = true
+// Decode a downsampled image straight from disk via ImageIO — much cheaper than
+// fully decoding a 12MP+ photo, and it applies the EXIF orientation.
+func loadDownsampled(_ path: String) -> CGImage? {
+    guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil)
+    else { return nil }
+    let opts: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceThumbnailMaxPixelSize: MAX_DIM,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)
+}
 
-func process(_ path: String) {
-    guard let img = NSImage(contentsOfFile: path),
-        let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil)
-    else {
-        emit(["path": path, "labels": [], "text": ""])
-        return
+// Each call builds its own requests so workers don't share Vision state.
+func process(_ path: String) -> [String: Any] {
+    guard let cg = loadDownsampled(path) else {
+        return ["path": path, "labels": [], "text": ""]
     }
     let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+    let classify = VNClassifyImageRequest()
+    let ocr = VNRecognizeTextRequest()
+    // .fast is CPU-based (so it parallelizes across cores) and much quicker than
+    // .accurate, while still reading clear text well enough for search.
+    ocr.recognitionLevel = .fast
+    ocr.usesLanguageCorrection = false
+
     var labels: [[String: Any]] = []
     var text = ""
     do {
@@ -47,14 +62,19 @@ func process(_ path: String) {
                 .joined(separator: " ")
         }
     } catch {}
-    emit(["path": path, "labels": labels, "text": text])
+    return ["path": path, "labels": labels, "text": text]
 }
 
 let args = CommandLine.arguments
 if args.count >= 2 {
-    process(args[1])
+    emit(process(args[1]))
 } else {
+    var paths: [String] = []
     while let line = readLine(strippingNewline: true) {
-        if !line.isEmpty { process(line) }
+        if !line.isEmpty { paths.append(line) }
     }
+    DispatchQueue.concurrentPerform(iterations: paths.count) { i in
+        emit(process(paths[i]))
+    }
+    fflush(stdout)
 }

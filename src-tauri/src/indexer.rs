@@ -337,7 +337,7 @@ fn enrich_vision(
         }
         let batch: Vec<(i64, String)> = {
             let mut stmt = conn.prepare(
-                "SELECT id, path FROM assets WHERE kind='image' AND vision_done=0 LIMIT 40",
+                "SELECT id, path FROM assets WHERE kind='image' AND vision_done=0 LIMIT 128",
             )?;
             let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
             rows.filter_map(Result::ok).collect()
