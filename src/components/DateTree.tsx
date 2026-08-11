@@ -24,6 +24,29 @@ const KIND_META: Record<Kind, { label: string; icon: string }> = {
 
 const ROW_H = 30;
 
+function ExpandIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 8l4-4 4 4" />
+      <path d="M8 16l4 4 4-4" />
+    </svg>
+  );
+}
+
+function CollapseIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12h3" opacity="0.55" />
+      <path d="M11 12h2" opacity="0.55" />
+      <path d="M16 12h3" opacity="0.55" />
+      <path d="M12 8V3" />
+      <path d="M9.5 5.5l2.5 2.5 2.5-2.5" />
+      <path d="M12 16v5" />
+      <path d="M9.5 18.5l2.5-2.5 2.5 2.5" />
+    </svg>
+  );
+}
+
 type Row =
   | { kind: "year"; key: string; depth: number; label: string; count: number; nodeKey: string }
   | { kind: "month"; key: string; depth: number; label: string; count: number; nodeKey: string }
@@ -81,6 +104,27 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
     [allExpandableKeys]
   );
   const collapseAll = useCallback(() => setExpanded(new Set()), []);
+
+  // The node's own key plus every date node beneath it (down to the day level).
+  const subtreeKeysFor = useCallback(
+    (nodeKey: string) =>
+      allExpandableKeys.filter((k) => k === nodeKey || k.startsWith(nodeKey + ":")),
+    [allExpandableKeys]
+  );
+
+  // Expand or collapse an entire branch (e.g. a whole year or month).
+  const toggleSubtree = useCallback(
+    (nodeKey: string) => {
+      const keys = subtreeKeysFor(nodeKey);
+      setExpanded((prev) => {
+        const fully = keys.every((k) => prev.has(k));
+        const next = new Set(prev);
+        keys.forEach((k) => (fully ? next.delete(k) : next.add(k)));
+        return next;
+      });
+    },
+    [subtreeKeysFor]
+  );
 
   // Reset cached asset lists whenever the tree identity (root/range) changes.
   useEffect(() => {
@@ -256,22 +300,7 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
           disabled={!treeInteractive}
           onClick={anyExpanded ? collapseAll : expandAll}
         >
-          {anyExpanded ? (
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h3" opacity="0.55" />
-              <path d="M11 12h2" opacity="0.55" />
-              <path d="M16 12h3" opacity="0.55" />
-              <path d="M12 8V3" />
-              <path d="M9.5 5.5l2.5 2.5 2.5-2.5" />
-              <path d="M12 16v5" />
-              <path d="M9.5 18.5l2.5-2.5 2.5 2.5" />
-            </svg>
-          ) : (
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 8l4-4 4 4" />
-              <path d="M8 16l4 4 4-4" />
-            </svg>
-          )}
+          {anyExpanded ? <CollapseIcon /> : <ExpandIcon />}
         </button>
       </div>
 
@@ -305,6 +334,15 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
               row.kind !== "asset" && row.kind !== "loading" && expanded.has(row.nodeKey);
             const isSelected = row.kind === "asset" && selected?.id === row.asset.id;
             const hasChildren = row.kind !== "asset" && row.kind !== "loading";
+            // Branch fold/unfold appears on parent rows that nest further date
+            // nodes beneath them (years and months).
+            const subtreeKeys =
+              row.kind !== "asset" && row.kind !== "loading"
+                ? subtreeKeysFor(row.nodeKey)
+                : [];
+            const showSubtreeBtn = subtreeKeys.length > 1;
+            const subtreeFully =
+              showSubtreeBtn && subtreeKeys.every((k) => expanded.has(k));
             return (
               <div
                 key={row.key}
@@ -361,6 +399,19 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
                       <span className="tree-count">
                         {row.count.toLocaleString()}
                       </span>
+                      {showSubtreeBtn && (
+                        <button
+                          className="subtree-btn"
+                          title={subtreeFully ? "Collapse this branch" : "Expand this branch"}
+                          aria-label={subtreeFully ? "Collapse this branch" : "Expand this branch"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSubtree(row.nodeKey);
+                          }}
+                        >
+                          {subtreeFully ? <CollapseIcon size={13} /> : <ExpandIcon size={13} />}
+                        </button>
+                      )}
                     </>
                   )}
                 </div>

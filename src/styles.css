@@ -321,6 +321,28 @@ button {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+.subtree-btn {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.tree-row:hover .subtree-btn {
+  opacity: 1;
+}
+.subtree-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
 .tree-year > .tree-label {
   font-weight: 600;
 }
