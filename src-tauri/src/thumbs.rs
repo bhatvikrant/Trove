@@ -43,6 +43,58 @@ pub fn ensure(
     }
 }
 
+/// A square crop around a normalized face box (top-left origin), cut from the
+/// cached JPEG preview (so HEIC/RAW work too). Cached by path+mtime+box+size.
+pub fn face_thumb(
+    cache_dir: &Path,
+    src: &str,
+    mtime: i64,
+    (x, y, w, h): (f64, f64, f64, f64),
+    size: u32,
+) -> Option<PathBuf> {
+    let mut hasher = DefaultHasher::new();
+    format!("face|{src}|{mtime}|{x:.4},{y:.4},{w:.4},{h:.4}|{size}").hash(&mut hasher);
+    let out = cache_dir.join(format!("{:016x}.jpg", hasher.finish()));
+    if out.exists() {
+        return Some(out);
+    }
+    let preview = ensure(cache_dir, src, "image", mtime, 2560)?;
+    let m = 0.3;
+    let cx = (x - w * m).max(0.0);
+    let cy = (y - h * m).max(0.0);
+    let cw = (w * (1.0 + 2.0 * m)).min(1.0 - cx).max(0.01);
+    let ch = (h * (1.0 + 2.0 * m)).min(1.0 - cy).max(0.01);
+    let vf = format!(
+        "crop=iw*{cw}:ih*{ch}:iw*{cx}:ih*{cy},scale={size}:{size}",
+        cw = cw,
+        ch = ch,
+        cx = cx,
+        cy = cy,
+        size = size
+    );
+    let ok = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            &preview.to_string_lossy(),
+            "-vf",
+            &vf,
+            "-frames:v",
+            "1",
+            &out.to_string_lossy(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if ok && out.exists() {
+        Some(out)
+    } else {
+        None
+    }
+}
+
 /// Downscale an image (incl. HEIC/RAW) with macOS `sips`.
 fn gen_image(src: &str, out: &Path, size: u32) -> bool {
     Command::new("sips")

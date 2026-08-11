@@ -9,6 +9,7 @@ import type {
   Facets,
   IndexProgress,
   Kind,
+  Person,
   Places,
   QuickLocations,
   RecentFolder,
@@ -124,6 +125,44 @@ export async function listPlaceAssets(params: {
     city: params.city ?? null,
     filter: params.filter ?? null,
   });
+}
+
+/** Clustered people (with a representative face) within the filter. */
+export async function getPeople(filter?: AssetFilter): Promise<Person[]> {
+  return invoke("get_people", { filter: filter ?? null });
+}
+
+/** Assets containing a given person (face cluster). */
+export async function listPersonAssets(params: {
+  clusterId: number;
+  filter?: AssetFilter;
+}): Promise<Asset[]> {
+  return invoke("list_person_assets", {
+    clusterId: params.clusterId,
+    filter: params.filter ?? null,
+  });
+}
+
+/** Name (or clear the name of) a person cluster. */
+export async function renamePerson(clusterId: number, name: string): Promise<void> {
+  await invoke("rename_person", { clusterId, name });
+}
+
+/** A webview-loadable URL for a square face crop. */
+export async function getFaceThumb(
+  path: string,
+  box: { x: number; y: number; w: number; h: number },
+  size = 96
+): Promise<string | null> {
+  const p = await invoke<string | null>("get_face_thumb", {
+    path,
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
+    size,
+  });
+  return p ? convertFileSrc(p) : null;
 }
 
 /** Full-index name search, constrained to the active filter. */

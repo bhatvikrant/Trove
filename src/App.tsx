@@ -10,10 +10,13 @@ import { FilterChips } from "./components/FilterChips";
 import { LensSwitcher } from "./components/LensSwitcher";
 import { PlacesTree } from "./components/PlacesTree";
 import { PlacesMap } from "./components/PlacesMap";
+import { PeopleTree } from "./components/PeopleTree";
+import { PeopleGrid } from "./components/PeopleGrid";
 import { SettingsModal } from "./components/SettingsModal";
 import {
   deleteAsset,
   getDateTree,
+  getPeople,
   getPlaces,
   onIndexProgress,
   onMenuOpenFolder,
@@ -21,6 +24,7 @@ import {
   onVisionProgress,
   pickFolder,
   renameAsset,
+  renamePerson,
   rescan,
   setFavorite,
   setRoot,
@@ -32,6 +36,7 @@ import {
   type DateTree as DateTreeData,
   type IndexProgress,
   type Lens,
+  type Person,
   type Places,
   type VisionProgress,
 } from "./types";
@@ -43,6 +48,8 @@ export default function App() {
   const [lens, setLens] = useState<Lens>("date");
   const [places, setPlaces] = useState<Places | null>(null);
   const [focusPlace, setFocusPlace] = useState<{ country: string; city?: string } | null>(null);
+  const [people, setPeople] = useState<Person[] | null>(null);
+  const [focusPerson, setFocusPerson] = useState<{ clusterId: number } | null>(null);
   const [tree, setTree] = useState<DateTreeData | null>(null);
   const [vision, setVision] = useState<VisionProgress | null>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
@@ -203,6 +210,32 @@ export default function App() {
       .catch((e) => console.error("get_places failed", e));
   }, [root, lens, filter, dataVersion, tree]);
 
+  // Re-query people while the People lens is active (refresh as analysis runs).
+  useEffect(() => {
+    if (!root || lens !== "people") return;
+    getPeople(filter)
+      .then(setPeople)
+      .catch((e) => console.error("get_people failed", e));
+  }, [root, lens, filter, dataVersion, vision]);
+
+  const handleRenamePerson = useCallback(
+    async (clusterId: number, name: string) => {
+      try {
+        await renamePerson(clusterId, name);
+        setPeople((ps) =>
+          ps
+            ? ps.map((p) =>
+                p.clusterId === clusterId ? { ...p, name: name.trim() || null } : p
+              )
+            : ps
+        );
+      } catch (e) {
+        await message(String(e), { title: "Couldn’t rename", kind: "error" });
+      }
+    },
+    []
+  );
+
   // Open a folder by path (also used by recents, quick locations, drag-drop).
   const openFolderPath = useCallback(async (path: string) => {
     setSelected(null);
@@ -285,6 +318,9 @@ export default function App() {
     setFilter(EMPTY_FILTER);
     setLens("date");
     setVision(null);
+    setPeople(null);
+    setFocusPerson(null);
+    setPlaces(null);
   }, []);
 
   const indexing = !!progress && !progress.done;
@@ -383,7 +419,16 @@ export default function App() {
                   refreshToken={dataVersion}
                 />
               ) : (
-                <div className="lens-placeholder">Coming soon.</div>
+                <PeopleTree
+                  people={people}
+                  filter={filter}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onVisibleAssetsChange={setVisibleAssets}
+                  onRename={handleRenamePerson}
+                  focusPerson={focusPerson}
+                  refreshToken={dataVersion}
+                />
               )}
             </div>
             <div className="resizer" onMouseDown={onResize} />
@@ -401,6 +446,8 @@ export default function App() {
               emptyOverride={
                 lens === "places" ? (
                   <PlacesMap places={places} onFocusPlace={setFocusPlace} />
+                ) : lens === "people" ? (
+                  <PeopleGrid people={people} onFocusPerson={setFocusPerson} />
                 ) : undefined
               }
             />

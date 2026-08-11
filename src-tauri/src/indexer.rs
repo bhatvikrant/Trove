@@ -358,17 +358,26 @@ fn enrich_vision(
         let tx = conn.transaction()?;
         {
             let mut upd = tx.prepare("UPDATE assets SET ocr=?1, vision_done=1 WHERE id=?2")?;
-            let mut del = tx.prepare("DELETE FROM asset_labels WHERE asset_id=?1")?;
-            let mut ins =
+            let mut del_lbl = tx.prepare("DELETE FROM asset_labels WHERE asset_id=?1")?;
+            let mut ins_lbl =
                 tx.prepare("INSERT OR IGNORE INTO asset_labels(asset_id, label) VALUES(?1,?2)")?;
+            let mut del_face = tx.prepare("DELETE FROM faces WHERE asset_id=?1")?;
+            let mut ins_face = tx.prepare(
+                "INSERT INTO faces(asset_id,x,y,w,h,embedding,cluster_id) \
+                 VALUES(?1,?2,?3,?4,?5,?6,NULL)",
+            )?;
             for (id, path) in &batch {
                 let data = results.get(path);
                 let text = data.map(|d| d.text.as_str()).unwrap_or("");
                 upd.execute(rusqlite::params![text, id])?;
-                del.execute([id])?;
+                del_lbl.execute([id])?;
+                del_face.execute([id])?;
                 if let Some(d) = data {
                     for label in &d.labels {
-                        ins.execute(rusqlite::params![id, label])?;
+                        ins_lbl.execute(rusqlite::params![id, label])?;
+                    }
+                    for f in &d.faces {
+                        ins_face.execute(rusqlite::params![id, f.x, f.y, f.w, f.h, f.embedding])?;
                     }
                 }
             }
@@ -377,6 +386,129 @@ fn enrich_vision(
         processed += batch.len() as i64;
         emit_vision(app, processed.min(total), total, false);
     }
+
+    if !superseded(generation, my_gen) {
+        cluster_faces(conn)?;
+    }
     emit_vision(app, total, total, true);
     Ok(())
+}
+
+/// Greedy incremental face clustering: each unclustered face joins the nearest
+/// existing cluster within a cosine-distance threshold, or starts a new one.
+/// Best-effort — the embeddings are Vision feature prints, not face-tuned.
+fn cluster_faces(conn: &mut rusqlite::Connection) -> rusqlite::Result<()> {
+    const THRESHOLD: f32 = 0.32; // cosine distance; smaller = stricter
+
+    // Seed centroids from already-clustered faces.
+    let mut centroids: Vec<(i64, Vec<f32>, u32)> = Vec::new(); // (cluster_id, centroid, count)
+    {
+        let mut stmt =
+            conn.prepare("SELECT cluster_id, embedding FROM faces WHERE cluster_id IS NOT NULL")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
+        })?;
+        for row in rows {
+            let (cid, bytes) = row?;
+            let v = normalize(bytes_to_f32(&bytes));
+            if v.is_empty() {
+                continue;
+            }
+            if let Some(c) = centroids.iter_mut().find(|c| c.0 == cid) {
+                add_into(&mut c.1, &v);
+                c.2 += 1;
+            } else {
+                centroids.push((cid, v, 1));
+            }
+        }
+    }
+    let mut next_id: i64 = conn
+        .query_row("SELECT COALESCE(MAX(cluster_id),0) FROM faces", [], |r| {
+            r.get(0)
+        })
+        .unwrap_or(0);
+
+    let pending: Vec<(i64, Vec<u8>)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, embedding FROM faces WHERE cluster_id IS NULL AND embedding IS NOT NULL",
+        )?;
+        let rows =
+            stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
+        rows.filter_map(Result::ok).collect()
+    };
+    if pending.is_empty() {
+        return Ok(());
+    }
+
+    let tx = conn.transaction()?;
+    {
+        let mut assign = tx.prepare("UPDATE faces SET cluster_id=?1 WHERE id=?2")?;
+        let mut new_person =
+            tx.prepare("INSERT OR IGNORE INTO people(cluster_id, name) VALUES(?1, NULL)")?;
+        for (face_id, bytes) in &pending {
+            let v = normalize(bytes_to_f32(bytes));
+            if v.is_empty() {
+                continue;
+            }
+            // nearest centroid
+            let mut best = f32::MAX;
+            let mut best_idx: Option<usize> = None;
+            for (i, c) in centroids.iter().enumerate() {
+                let mean = scaled(&c.1, 1.0 / c.2 as f32);
+                let d = cosine_distance(&v, &normalize(mean));
+                if d < best {
+                    best = d;
+                    best_idx = Some(i);
+                }
+            }
+            let cid = if best <= THRESHOLD {
+                let i = best_idx.unwrap();
+                add_into(&mut centroids[i].1, &v);
+                centroids[i].2 += 1;
+                centroids[i].0
+            } else {
+                next_id += 1;
+                centroids.push((next_id, v, 1));
+                new_person.execute([next_id])?;
+                next_id
+            };
+            assign.execute(rusqlite::params![cid, face_id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn bytes_to_f32(b: &[u8]) -> Vec<f32> {
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+fn normalize(mut v: Vec<f32>) -> Vec<f32> {
+    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 1e-6 {
+        for x in &mut v {
+            *x /= norm;
+        }
+    }
+    v
+}
+
+fn add_into(acc: &mut [f32], v: &[f32]) {
+    for (a, b) in acc.iter_mut().zip(v) {
+        *a += *b;
+    }
+}
+
+fn scaled(v: &[f32], s: f32) -> Vec<f32> {
+    v.iter().map(|x| x * s).collect()
+}
+
+fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return f32::MAX;
+    }
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    1.0 - dot
 }

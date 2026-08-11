@@ -78,6 +78,24 @@ export interface Places {
   countries: PlaceCountry[];
 }
 
+export interface FaceBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface Person {
+  clusterId: number;
+  name: string | null;
+  count: number;
+  path: string; // representative asset
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface KindCount {
   kind: Kind;
   count: number;

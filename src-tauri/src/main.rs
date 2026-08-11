@@ -766,6 +766,117 @@ fn list_place_assets(
     run_asset_query(&conn, &sql, &binds)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Person {
+    cluster_id: i64,
+    name: Option<String>,
+    count: i64,
+    path: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+/// Clustered people (≥2 faces) within the filter, each with a representative
+/// face (largest) for a thumbnail. Best-effort recognition.
+#[tauri::command]
+fn get_people(filter: Option<Filter>, state: State<AppState>) -> Result<Vec<Person>, String> {
+    let (conds, binds) = filter_conditions(&filter);
+    let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    let conn = state.db.lock().unwrap();
+    let sql = format!(
+        "WITH filtered AS (SELECT id FROM assets{}), \
+         ranked AS ( \
+           SELECT f.cluster_id AS cid, a.path AS path, f.x AS x, f.y AS y, f.w AS w, f.h AS h, \
+             ROW_NUMBER() OVER (PARTITION BY f.cluster_id ORDER BY f.w*f.h DESC) AS rn, \
+             COUNT(*) OVER (PARTITION BY f.cluster_id) AS cnt \
+           FROM faces f JOIN assets a ON a.id = f.asset_id \
+           WHERE f.cluster_id IS NOT NULL AND f.asset_id IN (SELECT id FROM filtered) \
+         ) \
+         SELECT r.cid, r.cnt, r.path, r.x, r.y, r.w, r.h, p.name \
+         FROM ranked r LEFT JOIN people p ON p.cluster_id = r.cid \
+         WHERE r.rn = 1 AND r.cnt >= 2 \
+         ORDER BY r.cnt DESC, r.cid ASC",
+        where_clause(&conds)
+    );
+    let mut stmt = conn.prepare(&sql).map_err(e2s)?;
+    let rows = stmt
+        .query_map(params.as_slice(), |r| {
+            Ok(Person {
+                cluster_id: r.get(0)?,
+                count: r.get(1)?,
+                path: r.get(2)?,
+                x: r.get(3)?,
+                y: r.get(4)?,
+                w: r.get(5)?,
+                h: r.get(6)?,
+                name: r.get(7)?,
+            })
+        })
+        .map_err(e2s)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(e2s)?);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn list_person_assets(
+    cluster_id: i64,
+    filter: Option<Filter>,
+    state: State<AppState>,
+) -> Result<Vec<Asset>, String> {
+    let (mut conds, mut binds) = filter_conditions(&filter);
+    conds.push("id IN (SELECT asset_id FROM faces WHERE cluster_id = ?)".into());
+    binds.push(Box::new(cluster_id));
+    let sql = format!(
+        "SELECT {ASSET_COLS} FROM assets{} ORDER BY capture_ts ASC, name COLLATE NOCASE ASC",
+        where_clause(&conds)
+    );
+    let conn = state.db.lock().unwrap();
+    run_asset_query(&conn, &sql, &binds)
+}
+
+#[tauri::command]
+fn rename_person(cluster_id: i64, name: String, state: State<AppState>) -> Result<(), String> {
+    let name = name.trim();
+    let value: Option<&str> = if name.is_empty() { None } else { Some(name) };
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO people(cluster_id, name) VALUES(?1, ?2)
+             ON CONFLICT(cluster_id) DO UPDATE SET name = excluded.name",
+            rusqlite::params![cluster_id, value],
+        )
+        .map_err(e2s)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_face_thumb(
+    path: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    size: u32,
+    state: State<AppState>,
+) -> Result<Option<String>, String> {
+    let mtime = std::fs::metadata(&path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let thumb = thumbs::face_thumb(&state.cache_dir, &path, mtime, (x, y, w, h), size.clamp(48, 512));
+    Ok(thumb.map(|p| p.to_string_lossy().to_string()))
+}
+
 #[tauri::command]
 fn get_thumb(path: String, size: u32, state: State<AppState>) -> Result<Option<String>, String> {
     let p = std::path::Path::new(&path);
@@ -1015,6 +1126,10 @@ fn main() {
             list_place_assets,
             get_settings,
             set_vision_quality,
+            get_people,
+            list_person_assets,
+            rename_person,
+            get_face_thumb,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

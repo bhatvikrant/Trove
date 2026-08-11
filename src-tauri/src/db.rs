@@ -7,6 +7,8 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    // Wait for the lock instead of erroring when the indexer and UI both write.
+    conn.busy_timeout(std::time::Duration::from_secs(10))?;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS assets (
@@ -63,7 +65,25 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             label    TEXT NOT NULL,
             PRIMARY KEY (asset_id, label)
          );
-         CREATE INDEX IF NOT EXISTS idx_labels_label ON asset_labels(label);",
+         CREATE INDEX IF NOT EXISTS idx_labels_label ON asset_labels(label);
+
+         CREATE TABLE IF NOT EXISTS faces (
+            id         INTEGER PRIMARY KEY,
+            asset_id   INTEGER NOT NULL,
+            x          REAL NOT NULL,
+            y          REAL NOT NULL,
+            w          REAL NOT NULL,
+            h          REAL NOT NULL,
+            embedding  BLOB,
+            cluster_id INTEGER
+         );
+         CREATE INDEX IF NOT EXISTS idx_faces_asset ON faces(asset_id);
+         CREATE INDEX IF NOT EXISTS idx_faces_cluster ON faces(cluster_id);
+
+         CREATE TABLE IF NOT EXISTS people (
+            cluster_id INTEGER PRIMARY KEY,
+            name       TEXT
+         );",
     )?;
     Ok(conn)
 }

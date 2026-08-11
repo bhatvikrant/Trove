@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -10,17 +11,37 @@ struct RawLabel {
 }
 
 #[derive(Deserialize)]
+struct RawFace {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    embedding: String, // base64 of little-endian f32 bytes
+}
+
+#[derive(Deserialize)]
 struct RawResult {
     path: String,
     #[serde(default)]
     labels: Vec<RawLabel>,
     #[serde(default)]
     text: String,
+    #[serde(default)]
+    faces: Vec<RawFace>,
+}
+
+pub struct Face {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub embedding: Vec<u8>, // raw f32 bytes
 }
 
 pub struct VisionData {
     pub labels: Vec<String>,
     pub text: String,
+    pub faces: Vec<Face>,
 }
 
 /// Run the macOS Vision helper over a batch of image paths (piped via stdin,
@@ -60,11 +81,28 @@ pub fn run_batch(helper: &Path, paths: &[String], accurate: bool) -> HashMap<Str
                 continue;
             }
             if let Ok(r) = serde_json::from_str::<RawResult>(&line) {
+                let faces = r
+                    .faces
+                    .into_iter()
+                    .filter_map(|f| {
+                        base64::engine::general_purpose::STANDARD
+                            .decode(f.embedding.as_bytes())
+                            .ok()
+                            .map(|embedding| Face {
+                                x: f.x,
+                                y: f.y,
+                                w: f.w,
+                                h: f.h,
+                                embedding,
+                            })
+                    })
+                    .collect();
                 out.insert(
                     r.path,
                     VisionData {
                         labels: r.labels.into_iter().map(|l| l.label).collect(),
                         text: r.text,
+                        faces,
                     },
                 );
             }
