@@ -92,7 +92,7 @@ button:disabled {
 .navbar-title {
   font-weight: 600;
   font-size: 13px;
-  padding-left: 62px; /* clear macOS traffic lights */
+  padding-left: 84px; /* clear macOS traffic lights */
 }
 .navbar-root {
   color: var(--text-dim);
