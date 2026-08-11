@@ -238,6 +238,7 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
 
   const items = virtualizer.getVirtualItems();
   const treeInteractive = !searchResults && !!tree && tree.total > 0;
+  const anyExpanded = expanded.size > 0;
 
   return (
     <>
@@ -248,32 +249,25 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <div className="tree-tools">
-          <button
-            className="icon-btn"
-            title="Expand all"
-            aria-label="Expand all"
-            disabled={!treeInteractive}
-            onClick={expandAll}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 8l4-4 4 4" />
-              <path d="M8 16l4 4 4-4" />
-            </svg>
-          </button>
-          <button
-            className="icon-btn"
-            title="Collapse all"
-            aria-label="Collapse all"
-            disabled={!treeInteractive}
-            onClick={collapseAll}
-          >
+        <button
+          className="icon-btn"
+          title={anyExpanded ? "Collapse all" : "Expand all"}
+          aria-label={anyExpanded ? "Collapse all" : "Expand all"}
+          disabled={!treeInteractive}
+          onClick={anyExpanded ? collapseAll : expandAll}
+        >
+          {anyExpanded ? (
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M8 9l4 4 4-4" />
               <path d="M8 15l4-4 4 4" />
             </svg>
-          </button>
-        </div>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 8l4-4 4 4" />
+              <path d="M8 16l4 4 4-4" />
+            </svg>
+          )}
+        </button>
       </div>
 
       {searchResults && (

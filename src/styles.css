@@ -241,10 +241,6 @@ button {
 .sidebar-search:focus {
   border-color: var(--accent);
 }
-.tree-tools {
-  display: flex;
-  gap: 2px;
-}
 .icon-btn {
   border: 1px solid var(--border);
   background: var(--bg-elevated);
