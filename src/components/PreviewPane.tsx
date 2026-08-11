@@ -66,6 +66,7 @@ interface Props {
   onRename: (asset: Asset, newName: string) => void;
   onDelete: (asset: Asset) => void;
   onToggleFavorite: (asset: Asset) => void;
+  onClose: () => void;
   emptyOverride?: ReactNode;
 }
 
@@ -79,6 +80,7 @@ export function PreviewPane({
   onRename,
   onDelete,
   onToggleFavorite,
+  onClose,
   emptyOverride,
 }: Props) {
   const canCycle = !!position && position.total > 1;
@@ -134,7 +136,10 @@ export function PreviewPane({
   const onKeyDown = (e: React.KeyboardEvent) => {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "VIDEO" || tag === "AUDIO") return; // let media controls handle it
-    if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
       e.preventDefault();
       onNavigate(-1);
     } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
@@ -169,6 +174,14 @@ export function PreviewPane({
       style={{ outline: "none" }}
     >
       <div className="preview-stage">
+        <button
+          className="preview-close"
+          title="Close preview (Esc)"
+          aria-label="Close preview"
+          onClick={onClose}
+        >
+          ×
+        </button>
         {canCycle && (
           <>
             <button

@@ -22,8 +22,14 @@ export function Navbar({
   canRescan,
 }: Props) {
   return (
-    <div className="navbar">
-      <span className="navbar-title">Trove</span>
+    // `data-tauri-drag-region` makes the bar behave like a native title bar:
+    // click-drag moves the window, double-click toggles maximize. It applies to
+    // the element it's on, so the title and spacer carry it too; buttons don't,
+    // so they stay clickable.
+    <div className="navbar" data-tauri-drag-region>
+      <span className="navbar-title" data-tauri-drag-region>
+        Trove
+      </span>
 
       {/* Action buttons are only useful once a folder is open. */}
       {root && (
@@ -51,7 +57,7 @@ export function Navbar({
         </>
       )}
 
-      <div className="spacer" />
+      <div className="spacer" data-tauri-drag-region />
 
       {root && (
         <>

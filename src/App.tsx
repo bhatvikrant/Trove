@@ -3,6 +3,7 @@ import { Navbar } from "./components/Navbar";
 import { DateTree } from "./components/DateTree";
 import { PreviewPane } from "./components/PreviewPane";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { EmptyState } from "./components/EmptyState";
 import { FilterChips } from "./components/FilterChips";
@@ -49,6 +50,9 @@ export default function App() {
   const [dataVersion, setDataVersion] = useState(0);
   // True while a folder is being dragged over the window.
   const [dragging, setDragging] = useState(false);
+  // True in native macOS fullscreen, where the traffic lights are hidden and the
+  // navbar can reclaim the left inset that normally clears them.
+  const [fullscreen, setFullscreen] = useState(false);
 
   const handleRename = useCallback(
     async (asset: Asset, newName: string) => {
@@ -205,6 +209,24 @@ export default function App() {
     return () => un?.();
   }, [handlePickFolder]);
 
+  // Track native fullscreen so the navbar can drop its traffic-light inset.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    try {
+      const win = getCurrentWindow();
+      const sync = () =>
+        win.isFullscreen().then(setFullscreen).catch(() => {});
+      sync();
+      win
+        .onResized(sync)
+        .then((fn) => (un = fn))
+        .catch(() => {});
+    } catch {
+      /* not running inside the Tauri webview */
+    }
+    return () => un?.();
+  }, []);
+
   // Drag a folder (or file) onto the window to open it.
   useEffect(() => {
     let un: (() => void) | undefined;
@@ -277,7 +299,7 @@ export default function App() {
   }, [progress]);
 
   return (
-    <div className="app">
+    <div className={`app${fullscreen ? " fullscreen" : ""}`}>
       <Navbar
         root={root}
         filter={filter}
@@ -346,6 +368,7 @@ export default function App() {
               onRename={handleRename}
               onDelete={handleDelete}
               onToggleFavorite={handleToggleFavorite}
+              onClose={() => setSelected(null)}
               emptyOverride={
                 lens === "places" ? (
                   <PlacesMap places={places} onFocusPlace={setFocusPlace} />
