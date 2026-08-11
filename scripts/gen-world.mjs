@@ -4,7 +4,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const gj = JSON.parse(readFileSync(process.argv[2], "utf8"));
-const r = (n) => Math.round(n * 10) / 10; // 0.1° precision — sub-pixel at map size
+const PREC = Number(process.argv[3] || 2); // decimal places
+const M = 10 ** PREC;
+const r = (n) => Math.round(n * M) / M;
 
 function ring(coords) {
   let d = "";

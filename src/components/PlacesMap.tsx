@@ -25,6 +25,9 @@ interface Hover {
 const MIN_S = 1;
 const MAX_S = 16;
 
+// A map marker whose tip sits at (12, 22) in its local 24×24 box.
+const MARKER = "M12 22C12 22 5 14.5 5 10a7 7 0 1 1 14 0c0 4.5-7 12-7 12z";
+
 function clampView(v: View): View {
   return {
     s: v.s,
@@ -161,36 +164,36 @@ export function PlacesMap({
           <svg viewBox="0 0 360 180" className="world-svg" ref={svgRef} preserveAspectRatio="xMidYMid meet">
             <rect x="0" y="0" width="360" height="180" className="world-ocean" />
             <g transform={`translate(${view.tx} ${view.ty}) scale(${view.s})`}>
-              <path d={WORLD_LAND} className="world-land-path" />
-              <g className="world-grat">
-                {[30, 60, 90, 120, 150].map((y) => (
-                  <line key={`h${y}`} x1="0" y1={y} x2="360" y2={y} strokeWidth={0.2 / view.s} />
-                ))}
-                {[60, 120, 180, 240, 300].map((x) => (
-                  <line key={`v${x}`} x1={x} y1="0" x2={x} y2="180" strokeWidth={0.2 / view.s} />
-                ))}
-              </g>
+              <path
+                d={WORLD_LAND}
+                className="world-land-path"
+                fillRule="evenodd"
+                vectorEffect="non-scaling-stroke"
+              />
             </g>
             <g>
               {pins.map((p) => {
                 const cx = view.tx + view.s * p.x;
                 const cy = view.ty + view.s * p.y;
-                if (cx < -4 || cx > 364 || cy < -4 || cy > 184) return null;
-                const r = Math.min(1.8 + Math.sqrt(p.count) * 0.7, 6);
+                if (cx < -12 || cx > 372 || cy < -12 || cy > 192) return null;
+                const k = Math.min(0.42 + Math.sqrt(p.count) * 0.03, 0.72);
                 return (
-                  <circle
+                  <g
                     key={`${p.country}:${p.city}`}
                     className="map-pin"
-                    cx={cx}
-                    cy={cy}
-                    r={r}
+                    transform={`translate(${cx} ${cy}) scale(${k})`}
                     onMouseEnter={(e) => showHover(p, e)}
                     onMouseMove={(e) => showHover(p, e)}
                     onMouseLeave={() => setHover(null)}
                     onClick={() => {
                       if (!moved.current) onFocusPlace({ country: p.country, city: p.city });
                     }}
-                  />
+                  >
+                    <g transform="translate(-12 -22)">
+                      <path d={MARKER} className="marker-body" />
+                      <circle cx="12" cy="10" r="2.8" className="marker-dot" />
+                    </g>
+                  </g>
                 );
               })}
             </g>

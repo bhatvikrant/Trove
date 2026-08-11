@@ -516,25 +516,30 @@ button:disabled {
 .world-ocean {
   fill: var(--bg-sidebar);
 }
-.world-grat line {
-  stroke: var(--text-faint);
-  stroke-width: 0.2;
-  opacity: 0.25;
-}
 .world-land-path {
   fill: var(--text-faint);
-  fill-opacity: 0.45;
+  fill-opacity: 0.3;
+  stroke: var(--text-dim);
+  stroke-opacity: 0.4;
+  stroke-width: 0.4;
+  stroke-linejoin: round;
 }
 .map-pin {
-  fill: #ec4899;
-  fill-opacity: 0.78;
-  stroke: #fff;
-  stroke-width: 0.4;
   cursor: pointer;
-  transition: fill-opacity 0.1s;
 }
-.map-pin:hover {
+.marker-body {
+  fill: #ec4899;
+  fill-opacity: 0.92;
+  stroke: #ffffff;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+.map-pin:hover .marker-body {
+  fill: #db2777;
   fill-opacity: 1;
+}
+.marker-dot {
+  fill: #ffffff;
 }
 .map-tip {
   position: absolute;
