@@ -14,6 +14,10 @@ import type {
   QuickLocations,
   RecentFolder,
   Settings,
+  SlideshowConfig,
+  SlideshowItem,
+  SlideshowPreset,
+  SpecialDate,
   VisionProgress,
   VisionQuality,
 } from "./types";
@@ -224,6 +228,81 @@ export async function deleteAsset(path: string): Promise<void> {
 /** Reveal a file in Finder. */
 export async function revealInFinder(path: string): Promise<void> {
   await invoke("reveal_in_finder", { path });
+}
+
+// ---------- Slideshow ----------
+
+/**
+ * Expand recurring special dates (+ a ± day window) into the concrete
+ * (month, day) pairs the backend matches. Uses a leap year so Feb 29 works and
+ * window arithmetic crosses month boundaries correctly; deduplicated.
+ */
+export function expandMonthDays(
+  dates: SpecialDate[],
+  windowDays: number
+): [number, number][] {
+  const seen = new Set<string>();
+  const out: [number, number][] = [];
+  for (const d of dates) {
+    for (let k = -windowDays; k <= windowDays; k++) {
+      const dt = new Date(2020, d.month - 1, d.day);
+      dt.setDate(dt.getDate() + k);
+      const m = dt.getMonth() + 1;
+      const day = dt.getDate();
+      const key = `${m}-${day}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push([m, day]);
+      }
+    }
+  }
+  return out;
+}
+
+function configToQuery(cfg: SlideshowConfig) {
+  return {
+    kinds: cfg.kinds,
+    favoriteOnly: cfg.favoriteOnly,
+    monthDays: expandMonthDays(cfg.specialDates, cfg.windowDays),
+    personClusterIds: cfg.personClusterIds,
+    order: cfg.shuffle ? "shuffle" : "chronological",
+    limit: 5000,
+  };
+}
+
+/** Resolve the assets for a slideshow config (with caption extras). */
+export async function listSlideshowAssets(
+  cfg: SlideshowConfig
+): Promise<SlideshowItem[]> {
+  return invoke("list_slideshow_assets", { query: configToQuery(cfg) });
+}
+
+/** Count assets matching a slideshow config (for the live indicator). */
+export async function countSlideshowAssets(
+  cfg: SlideshowConfig
+): Promise<number> {
+  return invoke("count_slideshow_assets", { query: configToQuery(cfg) });
+}
+
+/** Saved slideshow presets, newest first. */
+export async function listSlideshowPresets(): Promise<SlideshowPreset[]> {
+  return invoke("list_slideshow_presets");
+}
+
+/** Persist the current slideshow config under a name. */
+export async function saveSlideshowPreset(
+  name: string,
+  config: SlideshowConfig
+): Promise<SlideshowPreset> {
+  return invoke("save_slideshow_preset", {
+    name,
+    config: JSON.stringify(config),
+  });
+}
+
+/** Delete a saved slideshow preset. */
+export async function deleteSlideshowPreset(id: number): Promise<void> {
+  await invoke("delete_slideshow_preset", { id });
 }
 
 /** Subscribe to indexing progress. Returns an unlisten function. */

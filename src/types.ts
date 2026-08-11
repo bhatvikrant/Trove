@@ -163,3 +163,57 @@ export interface QuickLocations {
   standard: QuickLocation[];
   drives: QuickLocation[];
 }
+
+// ---------- Slideshow ----------
+
+/** A recurring calendar day (month+day, any year), e.g. a birthday. */
+export interface SpecialDate {
+  month: number; // 1-12
+  day: number; // 1-31
+  label?: string;
+}
+
+/** Everything needed to resolve and play a slideshow. Serialized into presets. */
+export interface SlideshowConfig {
+  kinds: Kind[]; // empty = all
+  favoriteOnly: boolean;
+  specialDates: SpecialDate[]; // empty = all dates
+  windowDays: number; // ± days around each special date
+  personClusterIds: number[]; // any-of; empty = anyone
+  // Playback
+  durationSec: number;
+  shuffle: boolean;
+  loop: boolean;
+  crossfade: boolean;
+  kenBurns: boolean;
+  captions: boolean;
+  muteVideo: boolean;
+}
+
+export const DEFAULT_SLIDESHOW_CONFIG: SlideshowConfig = {
+  kinds: ["image", "video"],
+  favoriteOnly: false,
+  specialDates: [],
+  windowDays: 0,
+  personClusterIds: [],
+  durationSec: 5,
+  shuffle: true,
+  loop: true,
+  crossfade: true,
+  kenBurns: true,
+  captions: true,
+  muteVideo: true,
+};
+
+/** An asset resolved for the slideshow, with caption extras. */
+export interface SlideshowItem extends Asset {
+  people: string[];
+  place: string | null;
+}
+
+export interface SlideshowPreset {
+  id: number;
+  name: string;
+  config: string; // serialized SlideshowConfig
+  createdAt: number;
+}
