@@ -1,71 +1,158 @@
+<div align="center">
+
+<img src="app-icon.png" width="112" alt="Trove app icon" />
+
 # Trove
 
-Trove is a fast, native macOS desktop app for browsing local media — photos, videos, audio and PDFs — organized by the date they were captured. Point it at any folder (a local directory or a connected SSD) and it indexes everything recursively into a date tree.
+**A fast, native macOS app for browsing your local photos, videos, audio & PDFs — organized by the date they were captured.**
 
-Built with **Tauri v2** (Rust) + **React/TypeScript**. Uses macOS's native WebKit, so **HEIC photos and HEVC/`.mov` videos render natively** without conversion.
+Point it at any folder or SSD. It indexes everything recursively into a date tree, understands your photos with on-device AI, and does it all **100% offline**.
 
-## Features
+<p>
+  <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" />
+  <img alt="Tauri v2" src="https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white" />
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-CE422B?logo=rust&logoColor=white" />
+  <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" />
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green" />
+  <img alt="Offline & private" src="https://img.shields.io/badge/100%25-offline%20%26%20private-6E56CF" />
+</p>
 
-- **Date tree** — year → month → day → kind (Photos / Videos / Audio / PDFs), newest first. Fully virtualized, so tens of thousands of items scroll smoothly.
-- **Capture-accurate dates** — reads EXIF `DateTimeOriginal` for photos and the `moov/mvhd` creation time for `.mp4`/`.mov`, falling back to the file's modified time otherwise.
-- **Calendar range picker** with smart presets (Today, Yesterday, Last 7/30 days, This/Last month, This/Last year, All time) plus a two-month range calendar.
-- **Combinable filters** — a Filters popover and an active-filter chip bar for media type, favorites, camera, format, and orientation; all combine (AND) with the date range and apply across the tree, lists, and search. A sidebar lens switcher frames the browse dimension.
-- **Places lens** — photos are geolocated from EXIF GPS and reverse-geocoded **offline** (bundled cities dataset) into Country → City. Browse a place tree on the left and an offline SVG world map with clustered pins on the right; click a pin to jump to that place.
-- **Scene & text (OCR)** — a macOS **Vision** helper tags each photo with content labels (beach, food, document, …) for a **Scene** filter, and recognizes text in images so **search matches words inside screenshots and photos**. Runs as an offline background pass after indexing, parallelized across all cores.
-- **People lens** — macOS Vision detects faces (group photos included, low-quality faces filtered out) and clusters them into people you can **name**, **drag one face onto another to merge**, and browse; a face grid on the right, a people list on the left. Recognition is best-effort (Vision feature-print embeddings, no bundled model), fully offline.
-- **Settings** (⌘,) — choose the analysis quality: **Best accuracy** (default) or **Fast** (quicker, may miss small text). Changing it re-analyzes in the background.
-- **Favorites** — star any asset from the preview pane and filter to just your starred ones.
-- **Preview pane** — native rendering for images, video (with controls), audio, and PDFs.
-- **Name search** across the whole index, respecting the active date range.
-- **Background indexing** with a local **SQLite** cache and a disk **thumbnail cache** (via `sips` / `ffmpeg` / QuickLook), so re-opening is instant.
-- **Welcome screen** — when no folder is open: recent folders (with asset counts), quick access to Pictures/Desktop/Downloads/Movies and connected drives, drag-and-drop a folder onto the window, and `⌘O` / a File ▸ Open Folder menu item.
-- Reveal any asset in Finder.
-- **Rename** — double-click an asset's name (in the tree or the preview info bar) to edit it inline; Enter/blur commits, Esc cancels.
-- **Delete** — a Delete button in the preview pane moves the file to the **Trash** (reversible) after a confirmation prompt.
-- **Keyboard navigation** in the tree — `↑`/`↓` move, `→` expands (or steps into children), `←` collapses (or hops to the parent), `Enter`/`Space` opens, `Home`/`End` jump to the first/last row. Arrowing onto an asset previews it live.
-- **Search shortcuts** — `/` or `⌘F` focuses search; `↓`/`Enter` dives from the search box into the tree; `Esc` clears the query (then blurs to the tree). Everything in the sidebar is reachable by `Tab` with visible focus rings.
-- **Preview navigation** — focus the preview pane (`Tab` to it or click it) and use `←`/`→` (or `↑`/`↓`) to cycle to the asset before/after the current one, wrapping around. On-screen `‹ ›` buttons and an "n of total" indicator appear too. Cycling follows the same order shown in the tree.
+</div>
 
-## Requirements
+---
 
-- macOS
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) (stable)
-- `ffmpeg` on your `PATH` (for video thumbnails): `brew install ffmpeg`
-  - `sips` and `qlmanage` ship with macOS.
+Trove is built with **Tauri v2** (Rust core) + **React/TypeScript**, rendering in macOS's
+native WebKit — so **HEIC photos and HEVC/`.mov` videos display without conversion**. Your
+originals are never copied or modified; Trove only reads them and stores small derived data
+(an index, thumbnails, embeddings).
 
-## Develop
+> **Why it's different**
+> - 🔒 **Private by design** — every feature, including scene/text/face analysis, runs on
+>   your Mac. Nothing is uploaded, ever.
+> - ⚡ **Built for scale** — a virtualized tree and a SQLite index handle tens of thousands
+>   of files smoothly.
+> - 🧳 **Portable libraries** — a folder can carry its own favorites, people names, and
+>   analysis cache, so it opens instantly on another Mac with no re-analysis.
+> - 🍎 **Actually native** — real macOS rendering, menus, and Vision — not a browser tab in
+>   a window.
+
+<!--
+  📸 Screenshots welcome! Drop images into docs/ and reference them here, e.g.:
+  <div align="center"><img src="docs/screenshot-date-tree.png" width="820" /></div>
+-->
+
+## ✨ Features
+
+**Browse**
+- 📅 **Date tree** — year → month → day → kind (Photos / Videos / Audio / PDFs), newest
+  first, fully virtualized.
+- 🎯 **Capture-accurate dates** — EXIF `DateTimeOriginal` for photos, `moov/mvhd` time for
+  `.mp4`/`.mov`, with a modified-time fallback.
+- 🗓️ **Calendar range picker** with smart presets (Today, Last 7/30 days, This/Last month
+  or year, All time) plus a two-month range calendar.
+- 🖼️ **Native preview pane** for images, video (with controls), audio, and PDFs, with
+  `←`/`→` to cycle through assets.
+
+**Understand** *(on-device, offline)*
+- 🏷️ **Scenes & text (OCR)** — Apple Vision tags each photo (beach, food, document, …) for
+  a Scene filter and recognizes text, so **search finds words inside screenshots and
+  photos**.
+- 🧑‍🤝‍🧑 **People** — faces are detected, quality-filtered, and clustered into people you can
+  **name** and **merge** (drag one face onto another).
+- 🌍 **Places** — photos are geolocated from EXIF GPS and reverse-geocoded **offline** into
+  Country → City, shown on an offline world map with clustered pins.
+
+**Filter & find**
+- 🔎 **Combinable filters** — media type, favorites, camera, format, orientation, and scene
+  labels all combine with the date range across the tree, lists, and search.
+- ⭐ **Favorites** — star assets and filter to just those.
+- 🔀 **Lens switcher** — browse the same filtered set by **Date**, **Places**, or **People**.
+
+**Manage**
+- ✏️ **Rename** inline (double-click a name), 🗑️ **delete** to Trash (reversible, with
+  confirmation), and **Reveal in Finder**.
+- 🧳 **Portable folder data** — favorites, names, and analysis live in a hidden `.trove/`
+  folder inside your media folder (toggleable), so the library travels with the folder.
+- ⌨️ **Full keyboard navigation** of the tree, search, and preview.
+
+<details>
+<summary><strong>⌨️ Keyboard shortcuts</strong></summary>
+
+| Context | Keys |
+| --- | --- |
+| Tree | `↑`/`↓` move · `→`/`←` expand/collapse (or step in/out) · `Enter`/`Space` open · `Home`/`End` first/last |
+| Search | `/` or `⌘F` focus · `↓`/`Enter` dive into results · `Esc` clear |
+| Preview | `←`/`→` (or `↑`/`↓`) cycle prev/next asset (wraps) |
+| App | `⌘O` open folder · `⌘,` settings |
+
+Everything in the sidebar is reachable by `Tab` with visible focus rings.
+</details>
+
+## 🚀 Quick start
+
+**Requirements:** macOS · [Node.js](https://nodejs.org/) 18+ · [Rust](https://rustup.rs/)
+(stable) · Xcode Command Line Tools (for the Vision helper) · `ffmpeg` on `PATH`
+(`brew install ffmpeg`). `sips` and `qlmanage` ship with macOS.
 
 ```bash
 npm install
-npm run app      # tauri dev — launches the app with hot reload
+npm run app        # launch the app with hot reload (tauri dev)
 ```
 
-## Build a distributable
+Build a distributable:
 
 ```bash
-npm run app:build   # produces a .app and .dmg under src-tauri/target/release/bundle
+npm run app:build  # .app + .dmg under src-tauri/target/release/bundle
 ```
 
-## How it works
+## 🏗️ Architecture at a glance
 
-| Layer | Location | Role |
-| --- | --- | --- |
-| UI | `src/` | React components: navbar, calendar, virtualized date tree, preview pane |
-| Indexer | `src-tauri/src/indexer.rs` | Recursive walk, batched upserts, progress events, incremental re-scan |
-| Metadata | `src-tauri/src/metadata.rs` | EXIF + MP4/MOV atom parsing for capture dates |
-| Thumbnails | `src-tauri/src/thumbs.rs` | `sips` (images/HEIC), `ffmpeg` (video), QuickLook (PDF) → cached JPEGs |
-| Index DB | `src-tauri/src/db.rs` | SQLite schema + queries |
+A Rust core owns the filesystem, the SQLite index, and all heavy work; a React/TypeScript UI
+renders in the native WebView and talks to it over Tauri IPC.
 
-The index and thumbnail cache live in `~/Library/Application Support/com.assetsviewer.app/`.
-
-Thumbnails are keyed by file path + modified time, so editing or replacing a file regenerates its thumbnail automatically. Re-scanning removes entries for files that no longer exist.
-
-## Tests
-
-```bash
-# Backend integration test (indexing, date extraction, aggregation, thumbnails).
-# Point it at a folder of sample media:
-cd src-tauri
-AV_TEST_DIR=/path/to/some/media cargo test -- --nocapture
+```mermaid
+flowchart LR
+    UI["React UI<br/>(src/)"] <-->|invoke / events| Core["Rust core<br/>(src-tauri/)"]
+    Core <--> DB[("SQLite index")]
+    Core --> Vision["Vision helper<br/>(Swift)"]
+    Core --> Thumbs["sips · ffmpeg · qlmanage"]
+    Core <-->|walk & sidecar| Media["Your media folder"]
 ```
+
+Full write-up in [docs/architecture.md](docs/architecture.md).
+
+## 📚 Documentation
+
+Deep dives on each subsystem live in [`docs/`](docs/):
+
+| Topic | What's inside |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Process model, data flow, module map, full IPC command catalog |
+| [Indexing & capture dates](docs/indexing.md) | Supported formats, EXIF/MP4 date extraction, incremental re-scans, generations |
+| [The index database](docs/database.md) | SQLite schema reference, storage locations, migrations |
+| [Photo analysis](docs/analysis.md) | The Swift Vision helper — scenes, OCR, faces & people clustering |
+| [Portable `.trove` sidecar](docs/portable-data.md) | How favorites, names & analysis travel with a folder |
+| [Lenses, filters & places](docs/filters-and-lenses.md) | The lens switcher, filter framework, and offline geocoding/map |
+| [Thumbnails & previews](docs/thumbnails.md) | Thumbnail/preview/face-crop generation and caching |
+| [Contributing](docs/contributing.md) | Setup, tests, project layout, and extension points |
+
+## 🔐 Where your data lives
+
+- **Index + thumbnail cache** — `~/Library/Application Support/com.assetsviewer.app/`
+  (`index.sqlite` + `thumbnails/`). Deleting it is a safe reset; your media is untouched.
+- **Portable per-folder data** — a hidden `.trove/` folder *inside* your media folder
+  (favorites, people names, analysis cache). Toggle it in Settings. See
+  [docs/portable-data.md](docs/portable-data.md).
+
+No account, no network, no telemetry.
+
+## 🤝 Contributing
+
+Issues and PRs are welcome — see [docs/contributing.md](docs/contributing.md) for setup,
+tests, and where to plug in new features. Please run `cargo test` and `npx tsc --noEmit`
+before submitting.
+
+## 📄 License
+
+Released under the [MIT License](LICENSE).
