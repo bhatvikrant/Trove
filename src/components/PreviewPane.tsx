@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { assetUrl, getPreview, revealInFinder } from "../api";
 import type { Asset } from "../types";
+import { showToast } from "../toast";
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -295,7 +296,10 @@ export function PreviewPane({
             className="btn pi-btn"
             title="Copy full path"
             aria-label="Copy full path"
-            onClick={() => navigator.clipboard?.writeText(asset.path)}
+            onClick={() => {
+              navigator.clipboard?.writeText(asset.path);
+              showToast("Copied path");
+            }}
           >
             <svg className="pi-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="9" width="11" height="11" rx="2" />
@@ -307,7 +311,10 @@ export function PreviewPane({
             className="btn pi-btn"
             title="Reveal in Finder"
             aria-label="Reveal in Finder"
-            onClick={() => revealInFinder(asset.path)}
+            onClick={() => {
+              revealInFinder(asset.path);
+              showToast("Revealed in Finder");
+            }}
           >
             <svg className="pi-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />

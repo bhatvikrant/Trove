@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getSettings, setVisionQuality } from "../api";
 import type { VisionQuality } from "../types";
+import { showToast } from "../toast";
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   // `null` until the saved setting loads, so we don't flash the first option
@@ -54,6 +55,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     if (q === quality) return;
     setQuality(q);
     setVisionQuality(q).catch(() => {});
+    showToast(
+      q === "fast" ? "Analysis set to Fast" : "Analysis set to Best accuracy",
+      { kind: "success" }
+    );
   };
 
   const OPTIONS: { id: VisionQuality; title: string; sub: string }[] = [

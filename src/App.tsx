@@ -14,6 +14,7 @@ import { PeopleTree } from "./components/PeopleTree";
 import { PeopleGrid } from "./components/PeopleGrid";
 import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
+import { showToast, dismissToast, Toaster } from "./toast";
 import {
   deleteAsset,
   getDateTree,
@@ -70,9 +71,13 @@ export default function App() {
   const [fullscreen, setFullscreen] = useState(false);
   // Asset ids hidden from the tree while their deletion is pending undo.
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
-  // The delete awaiting the undo window: the asset and its commit timer.
-  const [undo, setUndo] = useState<{ asset: Asset } | null>(null);
-  const pendingRef = useRef<{ asset: Asset; timer: number } | null>(null);
+  // The delete awaiting the undo window: the asset, its commit timer, and the
+  // id of the "Moved to Trash" toast so it can be dismissed on undo.
+  const pendingRef = useRef<{
+    asset: Asset;
+    timer: number;
+    toastId: number;
+  } | null>(null);
 
   const handleRename = useCallback(
     async (asset: Asset, newName: string) => {
@@ -82,6 +87,7 @@ export default function App() {
         const updated = await renameAsset(asset.path, trimmed);
         setSelected((cur) => (cur && cur.id === updated.id ? updated : cur));
         setDataVersion((v) => v + 1);
+        showToast(`Renamed to “${trimmed}”`, { kind: "success" });
       } catch (e) {
         await message(String(e), { title: "Couldn’t rename", kind: "error" });
       }
@@ -150,6 +156,7 @@ export default function App() {
         cur && cur.id === asset.id ? { ...cur, favorite: next } : cur
       );
       setDataVersion((v) => v + 1);
+      showToast(next ? "Added to favorites" : "Removed from favorites");
     } catch (e) {
       await message(String(e), { title: "Couldn’t update", kind: "error" });
     }
@@ -177,11 +184,27 @@ export default function App() {
 
   // Delete is optimistic + undoable: hide the row immediately, show a toast,
   // and only move the file to the Trash once the undo window elapses.
+  // Cancel the pending delete and bring the row back.
+  const handleUndo = useCallback(() => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    dismissToast(pending.toastId);
+    pendingRef.current = null;
+    setHiddenIds((prev) => {
+      const n = new Set(prev);
+      n.delete(pending.asset.id);
+      return n;
+    });
+    setSelected(pending.asset);
+  }, []);
+
   const handleDelete = useCallback(
     (asset: Asset) => {
       // Flush any still-pending delete before starting a new one.
       if (pendingRef.current) {
         clearTimeout(pendingRef.current.timer);
+        dismissToast(pendingRef.current.toastId);
         commitDelete(pendingRef.current.asset);
         pendingRef.current = null;
       }
@@ -198,29 +221,16 @@ export default function App() {
       );
       const timer = window.setTimeout(() => {
         pendingRef.current = null;
-        setUndo(null);
         commitDelete(asset);
       }, 6000);
-      pendingRef.current = { asset, timer };
-      setUndo({ asset });
+      const toastId = showToast(`Moved “${asset.name}” to Trash`, {
+        action: { label: "Undo", onClick: handleUndo },
+        duration: 6000,
+      });
+      pendingRef.current = { asset, timer, toastId };
     },
-    [visibleAssets, commitDelete]
+    [visibleAssets, commitDelete, handleUndo]
   );
-
-  // Cancel the pending delete and bring the row back.
-  const handleUndo = useCallback(() => {
-    const pending = pendingRef.current;
-    if (!pending) return;
-    clearTimeout(pending.timer);
-    pendingRef.current = null;
-    setUndo(null);
-    setHiddenIds((prev) => {
-      const n = new Set(prev);
-      n.delete(pending.asset.id);
-      return n;
-    });
-    setSelected(pending.asset);
-  }, []);
 
   // Commit any pending delete if the app unmounts.
   useEffect(() => {
@@ -294,6 +304,10 @@ export default function App() {
               )
             : ps
         );
+        showToast(
+          name.trim() ? `Named “${name.trim()}”` : "Name cleared",
+          { kind: "success" }
+        );
       } catch (e) {
         await message(String(e), { title: "Couldn’t rename", kind: "error" });
       }
@@ -309,6 +323,7 @@ export default function App() {
         await mergePeople(source, target);
         const fresh = await getPeople(filterRef.current);
         setPeople(fresh);
+        showToast("Merged people", { kind: "success" });
       } catch (e) {
         await message(String(e), { title: "Couldn’t merge", kind: "error" });
         getPeople(filterRef.current).then(setPeople).catch(() => {});
@@ -391,6 +406,7 @@ export default function App() {
   const handleRescan = useCallback(async () => {
     if (!root) return;
     setProgress({ scanned: 0, indexed: 0, total: null, done: false });
+    showToast("Rescanning for changes…");
     await rescan();
   }, [root]);
 
@@ -564,16 +580,7 @@ export default function App() {
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
 
-      {undo && (
-        <div className="toast" role="status">
-          <span className="toast-msg">
-            Moved “{undo.asset.name}” to Trash
-          </span>
-          <button className="toast-action" onClick={handleUndo}>
-            Undo
-          </button>
-        </div>
-      )}
+      <Toaster />
     </div>
   );
 }

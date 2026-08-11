@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import { AssetThumb } from "./AssetThumb";
 import { ContextMenu } from "./ContextMenu";
+import { showToast } from "../toast";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -722,15 +723,24 @@ export function DateTree({
           items={[
             {
               label: "Copy name",
-              onClick: () => navigator.clipboard?.writeText(menu.asset.name),
+              onClick: () => {
+                navigator.clipboard?.writeText(menu.asset.name);
+                showToast("Copied name");
+              },
             },
             {
               label: "Copy path",
-              onClick: () => navigator.clipboard?.writeText(menu.asset.path),
+              onClick: () => {
+                navigator.clipboard?.writeText(menu.asset.path);
+                showToast("Copied path");
+              },
             },
             {
               label: "Reveal in Finder",
-              onClick: () => revealInFinder(menu.asset.path),
+              onClick: () => {
+                revealInFinder(menu.asset.path);
+                showToast("Revealed in Finder");
+              },
             },
             {
               label: "Rename",
