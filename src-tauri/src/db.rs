@@ -1,0 +1,34 @@
+use rusqlite::Connection;
+use std::path::Path;
+
+/// Open (creating if needed) the SQLite index and ensure the schema exists.
+pub fn open(path: &Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS assets (
+            id          INTEGER PRIMARY KEY,
+            path        TEXT UNIQUE NOT NULL,
+            name        TEXT NOT NULL,
+            ext         TEXT,
+            kind        TEXT NOT NULL,
+            size        INTEGER NOT NULL,
+            mtime       INTEGER NOT NULL,
+            capture_ts  INTEGER NOT NULL,
+            year        INTEGER NOT NULL,
+            month       INTEGER NOT NULL,
+            day         INTEGER NOT NULL,
+            seen        INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_assets_capture ON assets(capture_ts);
+        CREATE INDEX IF NOT EXISTS idx_assets_ymd ON assets(year, month, day);
+        CREATE INDEX IF NOT EXISTS idx_assets_name ON assets(name COLLATE NOCASE);
+
+        CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+        "#,
+    )?;
+    Ok(conn)
+}
