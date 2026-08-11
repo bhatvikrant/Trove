@@ -26,17 +26,23 @@ const KIND_ICON: Record<string, string> = {
 
 function Logo() {
   return (
-    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+    <svg width="64" height="64" viewBox="0 0 96 96" aria-hidden="true">
       <defs>
-        <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#4a90ff" />
-          <stop offset="1" stopColor="#7c5cff" />
+        <linearGradient id="troveGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#8b5cf6" />
+          <stop offset="1" stopColor="#ec4899" />
         </linearGradient>
+        <clipPath id="troveTile">
+          <rect x="39" y="39" width="32" height="32" rx="7" />
+        </clipPath>
       </defs>
-      <rect x="1" y="1" width="62" height="62" rx="15" fill="url(#logoGrad)" />
-      <rect x="18" y="18" width="28" height="28" rx="5" fill="#f4f6fc" />
-      <circle cx="26" cy="27" r="3.6" fill="#ffc454" />
-      <path d="M18 42l7-8 5 5 6-7 10 10v2a2 2 0 0 1-2 2H20a2 2 0 0 1-2-2z" fill="#4a90ff" />
+      <rect x="4" y="4" width="88" height="88" rx="22" fill="url(#troveGrad)" />
+      <rect x="25" y="29" width="32" height="32" rx="7" fill="#fff" opacity="0.45" />
+      <rect x="39" y="39" width="32" height="32" rx="7" fill="#fff" />
+      <g clipPath="url(#troveTile)">
+        <circle cx="49" cy="48" r="4" fill="#f9a8d4" />
+        <path d="M39 71l9-10 5 5 7-8 11 11v2H39z" fill="#d94fb0" opacity="0.6" />
+      </g>
     </svg>
   );
 }
@@ -72,7 +78,7 @@ export function EmptyState({ onPickFolder, onOpen }: Props) {
         <header className="welcome-hero">
           <Logo />
           <div>
-            <h1>Assets Viewer</h1>
+            <h1>Trove</h1>
             <p className="welcome-tagline">
               Browse your photos, videos, audio &amp; PDFs by the date they were
               captured.

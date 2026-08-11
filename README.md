@@ -1,6 +1,6 @@
-# Assets Viewer
+# Trove
 
-A fast, native macOS desktop app for browsing local media — photos, videos, audio and PDFs — organized by the date they were captured. Point it at any folder (a local directory or a connected SSD) and it indexes everything recursively into a date tree.
+Trove is a fast, native macOS desktop app for browsing local media — photos, videos, audio and PDFs — organized by the date they were captured. Point it at any folder (a local directory or a connected SSD) and it indexes everything recursively into a date tree.
 
 Built with **Tauri v2** (Rust) + **React/TypeScript**. Uses macOS's native WebKit, so **HEIC photos and HEVC/`.mov` videos render natively** without conversion.
 

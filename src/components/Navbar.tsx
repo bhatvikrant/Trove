@@ -22,7 +22,7 @@ export function Navbar({
 }: Props) {
   return (
     <div className="navbar">
-      <span className="navbar-title">Assets Viewer</span>
+      <span className="navbar-title">Trove</span>
 
       {/* Action buttons are only useful once a folder is open. */}
       {root && (
