@@ -297,6 +297,9 @@ button {
 .tree-row.selected {
   background: var(--selected);
 }
+.tree-row.focused {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
 .tree-caret {
   width: 14px;
   flex: 0 0 14px;
