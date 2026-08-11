@@ -258,8 +258,13 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
         >
           {anyExpanded ? (
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 9l4 4 4-4" />
-              <path d="M8 15l4-4 4 4" />
+              <path d="M5 12h3" opacity="0.55" />
+              <path d="M11 12h2" opacity="0.55" />
+              <path d="M16 12h3" opacity="0.55" />
+              <path d="M12 8V3" />
+              <path d="M9.5 5.5l2.5 2.5 2.5-2.5" />
+              <path d="M12 16v5" />
+              <path d="M9.5 18.5l2.5-2.5 2.5 2.5" />
             </svg>
           ) : (
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
