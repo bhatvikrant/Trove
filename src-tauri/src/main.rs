@@ -1524,6 +1524,53 @@ mod tests {
     use super::*;
     use std::time::UNIX_EPOCH;
 
+    #[test]
+    fn slideshow_conditions_stack() {
+        let q = SlideshowQuery {
+            kinds: vec!["image".into(), "video".into()],
+            favorite_only: true,
+            month_days: vec![(5, 24), (12, 25)],
+            person_cluster_ids: vec![3, 7],
+            order: "shuffle".into(),
+            limit: None,
+        };
+        let (conds, binds) = slideshow_conditions(&q);
+        // kinds + favorite + month_days group + people subquery.
+        assert_eq!(conds.len(), 4);
+        assert!(conds.iter().any(|c| c.contains("kind IN")));
+        assert!(conds.iter().any(|c| c.contains("favorite = 1")));
+        assert!(conds.iter().any(|c| c.contains("month = ? AND day = ?")));
+        assert!(conds.iter().any(|c| c.contains("cluster_id IN")));
+        // 2 kinds + (2 month_days * 2) + 2 people = 8 binds (favorite has none).
+        assert_eq!(binds.len(), 8);
+    }
+
+    #[test]
+    fn slideshow_conditions_empty() {
+        let q = SlideshowQuery {
+            kinds: vec![],
+            favorite_only: false,
+            month_days: vec![],
+            person_cluster_ids: vec![],
+            order: String::new(),
+            limit: None,
+        };
+        let (conds, binds) = slideshow_conditions(&q);
+        assert!(conds.is_empty());
+        assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn place_label_variants() {
+        assert_eq!(
+            place_label(Some("Paris".into()), Some("France".into())).as_deref(),
+            Some("Paris, France")
+        );
+        assert_eq!(place_label(None, Some("France".into())).as_deref(), Some("France"));
+        assert_eq!(place_label(Some("Paris".into()), None).as_deref(), Some("Paris"));
+        assert_eq!(place_label(None, None), None);
+    }
+
     fn mtime_of(p: &std::path::Path) -> i64 {
         std::fs::metadata(p)
             .ok()
