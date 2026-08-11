@@ -481,6 +481,7 @@ export default function App() {
                   onSelect={setSelected}
                   onVisibleAssetsChange={setVisibleAssets}
                   onRename={handleRename}
+                  onDelete={handleDelete}
                   refreshToken={dataVersion}
                   hiddenIds={hiddenIds}
                 />

@@ -64,6 +64,7 @@ interface Props {
   onSelect: (a: Asset) => void;
   onVisibleAssetsChange?: (assets: Asset[]) => void;
   onRename?: (asset: Asset, newName: string) => void;
+  onDelete?: (asset: Asset) => void;
   refreshToken?: number;
   /** Asset ids to hide (e.g. pending an undoable delete). */
   hiddenIds?: Set<number>;
@@ -77,6 +78,7 @@ export function DateTree({
   onSelect,
   onVisibleAssetsChange,
   onRename,
+  onDelete,
   refreshToken,
   hiddenIds,
 }: Props) {
@@ -735,6 +737,15 @@ export function DateTree({
               onClick: () =>
                 setEditing({ id: menu.asset.id, value: menu.asset.name }),
             },
+            ...(onDelete
+              ? [
+                  {
+                    label: "Delete",
+                    danger: true,
+                    onClick: () => onDelete(menu.asset),
+                  },
+                ]
+              : []),
           ]}
         />
       )}
