@@ -909,6 +909,230 @@ fn list_person_assets(
     run_asset_query(&conn, &sql, &binds)
 }
 
+// ---------- Slideshow ----------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlideshowQuery {
+    #[serde(default)]
+    kinds: Vec<String>, // empty = all
+    #[serde(default)]
+    favorite_only: bool,
+    #[serde(default)]
+    month_days: Vec<(u32, u32)>, // recurring (month,day); empty = all dates
+    #[serde(default)]
+    person_cluster_ids: Vec<i64>, // any-of; empty = anyone
+    #[serde(default)]
+    order: String, // "shuffle" | "chronological"
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SlideshowItem {
+    #[serde(flatten)]
+    asset: Asset,
+    people: Vec<String>,
+    place: Option<String>,
+}
+
+fn place_label(city: Option<String>, country: Option<String>) -> Option<String> {
+    match (city, country) {
+        (Some(c), Some(co)) => Some(format!("{c}, {co}")),
+        (Some(c), None) => Some(c),
+        (None, Some(co)) => Some(co),
+        (None, None) => None,
+    }
+}
+
+/// Build the WHERE conditions + binds shared by the slideshow list/count.
+fn slideshow_conditions(q: &SlideshowQuery) -> (Vec<String>, Vec<Bind>) {
+    let mut conds: Vec<String> = Vec::new();
+    let mut binds: Vec<Bind> = Vec::new();
+    if !q.kinds.is_empty() {
+        let ph = q.kinds.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        conds.push(format!("kind IN ({ph})"));
+        for k in &q.kinds {
+            binds.push(Box::new(k.clone()));
+        }
+    }
+    if q.favorite_only {
+        conds.push("favorite = 1".into());
+    }
+    if !q.month_days.is_empty() {
+        let group = q
+            .month_days
+            .iter()
+            .map(|_| "(month = ? AND day = ?)")
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        conds.push(format!("({group})"));
+        for (m, d) in &q.month_days {
+            binds.push(Box::new(*m as i64));
+            binds.push(Box::new(*d as i64));
+        }
+    }
+    if !q.person_cluster_ids.is_empty() {
+        let ph = q
+            .person_cluster_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+        conds.push(format!(
+            "id IN (SELECT asset_id FROM faces WHERE cluster_id IN ({ph}))"
+        ));
+        for c in &q.person_cluster_ids {
+            binds.push(Box::new(*c));
+        }
+    }
+    (conds, binds)
+}
+
+/// Assets matching a slideshow query, each carrying caption extras (the named
+/// people it contains and a place label). The three filter groups stack (AND).
+#[tauri::command]
+fn list_slideshow_assets(
+    query: SlideshowQuery,
+    state: State<AppState>,
+) -> Result<Vec<SlideshowItem>, String> {
+    let (conds, mut binds) = slideshow_conditions(&query);
+    let order = if query.order == "shuffle" {
+        "RANDOM()"
+    } else {
+        "capture_ts ASC, name COLLATE NOCASE ASC"
+    };
+    let limit = query.limit.unwrap_or(5000).clamp(1, 20000);
+    let sql = format!(
+        "SELECT {ASSET_COLS}, place_city, place_country FROM assets{} ORDER BY {order} LIMIT ?",
+        where_clause(&conds)
+    );
+    binds.push(Box::new(limit));
+
+    let conn = state.db.lock().unwrap();
+    let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(e2s)?;
+    let rows = stmt
+        .query_map(params.as_slice(), |r| {
+            let asset = map_asset(r)?;
+            let city: Option<String> = r.get(12)?;
+            let country: Option<String> = r.get(13)?;
+            Ok(SlideshowItem {
+                asset,
+                people: Vec::new(),
+                place: place_label(city, country),
+            })
+        })
+        .map_err(e2s)?;
+    let mut items: Vec<SlideshowItem> = Vec::new();
+    for row in rows {
+        items.push(row.map_err(e2s)?);
+    }
+
+    // Batch-attach named people for the returned assets (avoids N+1 queries).
+    if !items.is_empty() {
+        use std::collections::HashMap;
+        let ids: Vec<String> = items.iter().map(|it| it.asset.id.to_string()).collect();
+        let names_sql = format!(
+            "SELECT f.asset_id, p.name FROM faces f JOIN people p ON p.cluster_id = f.cluster_id \
+             WHERE p.name IS NOT NULL AND f.asset_id IN ({})",
+            ids.join(",")
+        );
+        let mut by_asset: HashMap<i64, Vec<String>> = HashMap::new();
+        let mut nstmt = conn.prepare(&names_sql).map_err(e2s)?;
+        let nrows = nstmt
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+            .map_err(e2s)?;
+        for row in nrows {
+            let (aid, name) = row.map_err(e2s)?;
+            let entry = by_asset.entry(aid).or_default();
+            if !entry.contains(&name) {
+                entry.push(name);
+            }
+        }
+        for it in &mut items {
+            if let Some(names) = by_asset.remove(&it.asset.id) {
+                it.people = names;
+            }
+        }
+    }
+    Ok(items)
+}
+
+/// Count assets matching a slideshow query (for the live match indicator).
+#[tauri::command]
+fn count_slideshow_assets(query: SlideshowQuery, state: State<AppState>) -> Result<i64, String> {
+    let (conds, binds) = slideshow_conditions(&query);
+    let sql = format!("SELECT COUNT(*) FROM assets{}", where_clause(&conds));
+    let conn = state.db.lock().unwrap();
+    let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    conn.query_row(&sql, params.as_slice(), |r| r.get(0))
+        .map_err(e2s)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SlideshowPreset {
+    id: i64,
+    name: String,
+    config: String,
+    created_at: i64,
+}
+
+#[tauri::command]
+fn list_slideshow_presets(state: State<AppState>) -> Result<Vec<SlideshowPreset>, String> {
+    let conn = state.db.lock().unwrap();
+    let mut stmt = conn
+        .prepare("SELECT id, name, config, created_at FROM slideshow_presets ORDER BY created_at DESC")
+        .map_err(e2s)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(SlideshowPreset {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                config: r.get(2)?,
+                created_at: r.get(3)?,
+            })
+        })
+        .map_err(e2s)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(e2s)?);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn save_slideshow_preset(
+    name: String,
+    config: String,
+    state: State<AppState>,
+) -> Result<SlideshowPreset, String> {
+    let now = now_unix();
+    let conn = state.db.lock().unwrap();
+    conn.execute(
+        "INSERT INTO slideshow_presets(name, config, created_at) VALUES(?1, ?2, ?3)",
+        rusqlite::params![name, config, now],
+    )
+    .map_err(e2s)?;
+    let id = conn.last_insert_rowid();
+    Ok(SlideshowPreset {
+        id,
+        name,
+        config,
+        created_at: now,
+    })
+}
+
+#[tauri::command]
+fn delete_slideshow_preset(id: i64, state: State<AppState>) -> Result<(), String> {
+    let conn = state.db.lock().unwrap();
+    conn.execute("DELETE FROM slideshow_presets WHERE id = ?1", [id])
+        .map_err(e2s)?;
+    Ok(())
+}
+
 /// Persist a cluster's current name into the durable, path-keyed `named_faces`
 /// table so it can be reattached after the folder is re-indexed (which assigns
 /// fresh cluster ids). Keyed by file path + face centre. A cleared name removes
@@ -1285,6 +1509,11 @@ fn main() {
             rename_person,
             merge_people,
             get_face_thumb,
+            list_slideshow_assets,
+            count_slideshow_assets,
+            list_slideshow_presets,
+            save_slideshow_preset,
+            delete_slideshow_preset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

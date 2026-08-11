@@ -98,7 +98,16 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             name TEXT NOT NULL,
             PRIMARY KEY (path, cx, cy)
          );
-         CREATE INDEX IF NOT EXISTS idx_named_faces_path ON named_faces(path);",
+         CREATE INDEX IF NOT EXISTS idx_named_faces_path ON named_faces(path);
+
+         -- Saved slideshow configurations (durable, folder-independent). The
+         -- config is opaque JSON owned by the frontend.
+         CREATE TABLE IF NOT EXISTS slideshow_presets (
+            id         INTEGER PRIMARY KEY,
+            name       TEXT NOT NULL,
+            config     TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+         );",
     )?;
     Ok(conn)
 }
