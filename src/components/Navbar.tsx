@@ -11,6 +11,7 @@ interface Props {
   onHome: () => void;
   onSettings: () => void;
   onSlideshow: () => void;
+  onOnThisDay: () => void;
   canRescan: boolean;
 }
 
@@ -23,6 +24,7 @@ export function Navbar({
   onHome,
   onSettings,
   onSlideshow,
+  onOnThisDay,
   canRescan,
 }: Props) {
   return (
@@ -76,6 +78,18 @@ export function Navbar({
               <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z" />
             </svg>
             Slideshow
+          </button>
+
+          <button
+            className="btn icon"
+            onClick={onOnThisDay}
+            title="On This Day — today's date across all years"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="17" rx="2" />
+              <path d="M3 9h18M8 2v4M16 2v4" />
+              <path d="M12 12.5l.9 1.9 2.1.3-1.5 1.5.35 2.1-1.85-1-1.85 1 .35-2.1L9 14.7l2.1-.3z" />
+            </svg>
           </button>
           <FiltersMenu filter={filter} onChange={onFilter} />
           <CalendarPicker

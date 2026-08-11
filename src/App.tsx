@@ -36,6 +36,7 @@ import {
   setRoot,
 } from "./api";
 import {
+  DEFAULT_SLIDESHOW_CONFIG,
   EMPTY_FILTER,
   type Asset,
   type AssetFilter,
@@ -436,6 +437,15 @@ export default function App() {
     }
   }, []);
 
+  // One-tap slideshow of today's calendar day across every year.
+  const handleOnThisDay = useCallback(() => {
+    const now = new Date();
+    handleStartSlideshow({
+      ...DEFAULT_SLIDESHOW_CONFIG,
+      specialDates: [{ month: now.getMonth() + 1, day: now.getDate() }],
+    });
+  }, [handleStartSlideshow]);
+
   // Switching lens (Date / Places / People) clears the current preview, since
   // the selected asset may not exist in the new view.
   const handleLens = useCallback(
@@ -505,6 +515,7 @@ export default function App() {
         onHome={handleHome}
         onSettings={() => setSettingsOpen(true)}
         onSlideshow={() => setSlideshowSetup(true)}
+        onOnThisDay={handleOnThisDay}
         canRescan={!!root && !indexing}
       />
 
