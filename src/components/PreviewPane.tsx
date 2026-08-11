@@ -24,8 +24,29 @@ function fmtDate(unix: number): string {
   });
 }
 
-export function PreviewPane({ asset, total }: { asset: Asset | null; total: number }) {
+interface Props {
+  asset: Asset | null;
+  total: number;
+  position: { index: number; total: number } | null;
+  onNavigate: (delta: number) => void;
+}
+
+export function PreviewPane({ asset, total, position, onNavigate }: Props) {
   const url = useMemo(() => (asset ? assetUrl(asset.path) : null), [asset]);
+  const canCycle = !!position && position.total > 1;
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const tag = (e.target as HTMLElement).tagName;
+    // Let focused media controls handle arrow keys (scrubbing/volume).
+    if (tag === "VIDEO" || tag === "AUDIO") return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      onNavigate(-1);
+    } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      onNavigate(1);
+    }
+  };
 
   if (!asset) {
     return (
@@ -44,29 +65,57 @@ export function PreviewPane({ asset, total }: { asset: Asset | null; total: numb
   }
 
   return (
-    <div className="preview">
-      <div className="preview-stage" key={asset.id}>
-        {asset.kind === "image" && <img src={url!} alt={asset.name} />}
-        {asset.kind === "video" && (
-          <video src={url!} controls autoPlay={false} preload="metadata" />
+    <div
+      className="preview"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      style={{ outline: "none" }}
+    >
+      <div className="preview-stage">
+        {canCycle && (
+          <>
+            <button
+              className="preview-nav left"
+              title="Previous (←)"
+              aria-label="Previous asset"
+              onClick={() => onNavigate(-1)}
+            >
+              ‹
+            </button>
+            <button
+              className="preview-nav right"
+              title="Next (→)"
+              aria-label="Next asset"
+              onClick={() => onNavigate(1)}
+            >
+              ›
+            </button>
+          </>
         )}
-        {asset.kind === "audio" && (
-          <div className="audio-card">
-            <div className="glyph">🎵</div>
-            <audio src={url!} controls />
-          </div>
-        )}
-        {asset.kind === "pdf" && (
-          <iframe className="pdf-frame" src={url!} title={asset.name} />
-        )}
-        {asset.kind === "other" && (
-          <div className="audio-card">
-            <div className="glyph">📎</div>
-            <div style={{ color: "var(--text-dim)" }}>
-              No inline preview for this file type.
+
+        <div className="stage-inner" key={asset.id}>
+          {asset.kind === "image" && <img src={url!} alt={asset.name} />}
+          {asset.kind === "video" && (
+            <video src={url!} controls autoPlay={false} preload="metadata" />
+          )}
+          {asset.kind === "audio" && (
+            <div className="audio-card">
+              <div className="glyph">🎵</div>
+              <audio src={url!} controls />
             </div>
-          </div>
-        )}
+          )}
+          {asset.kind === "pdf" && (
+            <iframe className="pdf-frame" src={url!} title={asset.name} />
+          )}
+          {asset.kind === "other" && (
+            <div className="audio-card">
+              <div className="glyph">📎</div>
+              <div style={{ color: "var(--text-dim)" }}>
+                No inline preview for this file type.
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="preview-info">
@@ -77,6 +126,11 @@ export function PreviewPane({ asset, total }: { asset: Asset | null; total: numb
         <span className="meta">{humanSize(asset.size)}</span>
         {asset.ext && <span className="meta">{asset.ext.toUpperCase()}</span>}
         <span className="grow" />
+        {position && (
+          <span className="meta preview-pos">
+            {position.index + 1} of {position.total.toLocaleString()}
+          </span>
+        )}
         <button className="btn" onClick={() => revealInFinder(asset.path)}>
           Reveal in Finder
         </button>

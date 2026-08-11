@@ -409,6 +409,57 @@ button {
   overflow: hidden;
   position: relative;
 }
+.stage-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  padding-bottom: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.12s;
+  box-shadow: var(--shadow);
+}
+.preview:hover .preview-nav,
+.preview:focus-within .preview-nav {
+  opacity: 0.85;
+}
+.preview-nav:hover {
+  opacity: 1;
+  background: var(--hover);
+}
+.preview-nav:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.preview-nav.left {
+  left: 16px;
+}
+.preview-nav.right {
+  right: 16px;
+}
+.preview-pos {
+  color: var(--text-faint);
+}
 .preview-stage img,
 .preview-stage video {
   max-width: 100%;

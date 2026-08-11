@@ -61,9 +61,17 @@ interface Props {
   range: DateRange;
   selected: Asset | null;
   onSelect: (a: Asset) => void;
+  onVisibleAssetsChange?: (assets: Asset[]) => void;
 }
 
-export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
+export function DateTree({
+  tree,
+  loading,
+  range,
+  selected,
+  onSelect,
+  onVisibleAssetsChange,
+}: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [assetsByKey, setAssetsByKey] = useState<Map<string, Asset[]>>(new Map());
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(new Set());
@@ -405,6 +413,30 @@ export function DateTree({ tree, loading, range, selected, onSelect }: Props) {
       }
     }
   }, [rows, activeKey]);
+
+  // Report the ordered visible assets up so the preview pane can step through
+  // the same sequence the tree shows.
+  const visibleAssets = useMemo(
+    () =>
+      rows.flatMap((r) => (r.kind === "asset" ? [r.asset] : [])),
+    [rows]
+  );
+  useEffect(() => {
+    onVisibleAssetsChange?.(visibleAssets);
+  }, [visibleAssets, onVisibleAssetsChange]);
+
+  // When selection changes from elsewhere (e.g. prev/next in the preview),
+  // move the tree's focus ring to match and scroll it into view.
+  useEffect(() => {
+    if (!selected) return;
+    const idx = rows.findIndex(
+      (r) => r.kind === "asset" && r.asset.id === selected.id
+    );
+    if (idx >= 0 && rows[idx].key !== activeKey) {
+      setActiveKey(rows[idx].key);
+      virtualizer.scrollToIndex(idx, { align: "auto" });
+    }
+  }, [selected, rows, activeKey, virtualizer]);
 
   return (
     <>

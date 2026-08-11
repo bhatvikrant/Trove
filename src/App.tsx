@@ -26,6 +26,29 @@ export default function App() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [sidebarW, setSidebarW] = useState(340);
   const [loadingTree, setLoadingTree] = useState(false);
+  // The ordered assets currently visible in the tree, reported up by DateTree,
+  // so the preview pane can step to the one before/after the selected asset.
+  const [visibleAssets, setVisibleAssets] = useState<Asset[]>([]);
+
+  const position = useMemo(() => {
+    if (!selected) return null;
+    const index = visibleAssets.findIndex((a) => a.id === selected.id);
+    return index < 0 ? null : { index, total: visibleAssets.length };
+  }, [selected, visibleAssets]);
+
+  // Move selection to the asset `delta` steps away, wrapping around the ends.
+  const selectRelative = useCallback(
+    (delta: number) => {
+      setSelected((cur) => {
+        if (!cur || visibleAssets.length === 0) return cur;
+        const idx = visibleAssets.findIndex((a) => a.id === cur.id);
+        if (idx < 0) return cur;
+        const n = visibleAssets.length;
+        return visibleAssets[(idx + delta + n) % n];
+      });
+    },
+    [visibleAssets]
+  );
 
   // Keep a ref so the debounced tree refresh always sees the latest range.
   const rangeRef = useRef(range);
@@ -148,10 +171,16 @@ export default function App() {
                 range={range}
                 selected={selected}
                 onSelect={setSelected}
+                onVisibleAssetsChange={setVisibleAssets}
               />
             </div>
             <div className="resizer" onMouseDown={onResize} />
-            <PreviewPane asset={selected} total={total} />
+            <PreviewPane
+              asset={selected}
+              total={total}
+              position={position}
+              onNavigate={selectRelative}
+            />
           </>
         ) : (
           <div className="empty">
