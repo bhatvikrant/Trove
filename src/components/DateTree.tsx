@@ -158,10 +158,46 @@ export function DateTree({
     [allExpandableKeys]
   );
 
-  // Reset cached asset lists when the tree identity changes or after an edit.
+  // After an edit (favorite/rename/delete) or a tree/filter change, the cached
+  // per-day asset lists may be stale. Re-fetch the currently-expanded kind
+  // groups in place — clearing them outright would leave them stuck showing
+  // "Loading…" until the user re-expanded the folder.
   useEffect(() => {
-    setAssetsByKey(new Map());
-    setLoadingKeys(new Set());
+    const kindKeys = [...expanded].filter((k) => k.includes(":k:"));
+    if (kindKeys.length === 0) {
+      setAssetsByKey(new Map());
+      setLoadingKeys(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        kindKeys.map(async (nodeKey) => {
+          const parts = nodeKey.split(":"); // y:2024:m:5:d:12:k:image
+          const y = Number(parts[1]);
+          const m = Number(parts[3]);
+          const d = Number(parts[5]);
+          const k = parts[7] as Kind;
+          try {
+            const rows = await listAssets({ year: y, month: m, day: d, kind: k, filter });
+            return [nodeKey, rows] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (cancelled) return;
+      const next = new Map<string, Asset[]>();
+      for (const e of entries) if (e) next.set(e[0], e[1]);
+      setAssetsByKey(next);
+      setLoadingKeys(new Set());
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `expanded` is intentionally read fresh (not a dep) so this only re-runs on
+    // an actual edit / filter / tree change, not on every expand/collapse.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, tree?.total, refreshToken]);
 
   // Debounced name search across the whole index.

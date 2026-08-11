@@ -42,9 +42,52 @@ export function PlacesTree({
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Re-fetch the currently-expanded place nodes in place after an edit / filter
+  // / data change, rather than clearing them (which left them stuck on
+  // "Loading…" until the user re-expanded).
   useEffect(() => {
-    setAssetsByKey(new Map());
-    setLoadingKeys(new Set());
+    if (!places) {
+      setAssetsByKey(new Map());
+      setLoadingKeys(new Set());
+      return;
+    }
+    const toLoad: { key: string; country: string | null; city: string | null }[] = [];
+    for (const co of places.countries) {
+      const cKey = `C:${co.country}`;
+      if (!expanded.has(cKey)) continue;
+      for (const ci of co.cities) {
+        const ciKey = `${cKey}:${ci.city}`;
+        if (expanded.has(ciKey)) toLoad.push({ key: ciKey, country: co.country, city: ci.city });
+      }
+    }
+    if (expanded.has(NOLOC)) toLoad.push({ key: NOLOC, country: null, city: null });
+    if (toLoad.length === 0) {
+      setAssetsByKey(new Map());
+      setLoadingKeys(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        toLoad.map(async (t) => {
+          try {
+            const rows = await listPlaceAssets({ country: t.country, city: t.city, filter });
+            return [t.key, rows] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (cancelled) return;
+      const next = new Map<string, Asset[]>();
+      for (const e of entries) if (e) next.set(e[0], e[1]);
+      setAssetsByKey(next);
+      setLoadingKeys(new Set());
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, places?.total, refreshToken]);
 
   const toggle = useCallback((key: string) => {

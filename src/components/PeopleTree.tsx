@@ -41,9 +41,37 @@ export function PeopleTree({
   const skipBlur = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Re-fetch the currently-expanded people in place after an edit / filter
+  // change, rather than clearing them (which left them stuck on "Loading…").
   useEffect(() => {
-    setAssetsByKey(new Map());
-    setLoadingKeys(new Set());
+    const ids = [...expanded];
+    if (ids.length === 0) {
+      setAssetsByKey(new Map());
+      setLoadingKeys(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        ids.map(async (clusterId) => {
+          try {
+            const rows = await listPersonAssets({ clusterId, filter });
+            return [clusterId, rows] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (cancelled) return;
+      const next = new Map<number, Asset[]>();
+      for (const e of entries) if (e) next.set(e[0], e[1]);
+      setAssetsByKey(next);
+      setLoadingKeys(new Set());
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, refreshToken]);
 
   const loadAssets = useCallback(
