@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Deterministic on-disk location for a thumbnail, keyed by source path + mtime
-/// so that edited/replaced files get fresh thumbnails automatically.
-pub fn thumb_file(cache_dir: &Path, src: &str, mtime: i64) -> PathBuf {
+/// + size so that edited files refresh and different sizes (thumb vs. preview)
+/// cache separately.
+pub fn thumb_file(cache_dir: &Path, src: &str, mtime: i64, size: u32) -> PathBuf {
     let mut h = DefaultHasher::new();
     src.hash(&mut h);
     mtime.hash(&mut h);
+    size.hash(&mut h);
     cache_dir.join(format!("{:016x}.jpg", h.finish()))
 }
 
@@ -21,7 +23,7 @@ pub fn ensure(
     mtime: i64,
     size: u32,
 ) -> Option<PathBuf> {
-    let out = thumb_file(cache_dir, src, mtime);
+    let out = thumb_file(cache_dir, src, mtime, size);
     if out.exists() {
         return Some(out);
     }

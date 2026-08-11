@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { assetUrl, revealInFinder } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { assetUrl, getPreview, revealInFinder } from "../api";
 import type { Asset } from "../types";
 
 function humanSize(bytes: number): string {
@@ -24,21 +24,95 @@ function fmtDate(unix: number): string {
   });
 }
 
+// Resolved preview URLs by source path, and warm (decoded) <img> elements kept
+// alive so navigating to a neighbor paints instantly from cache.
+const previewUrlCache = new Map<string, string>();
+const warmImages = new Map<string, HTMLImageElement>();
+
+function warmImage(url: string) {
+  if (warmImages.has(url)) return;
+  const im = new Image();
+  im.decoding = "async";
+  im.src = url;
+  im.decode?.().catch(() => {});
+  warmImages.set(url, im);
+  if (warmImages.size > 12) {
+    const oldest = warmImages.keys().next().value as string | undefined;
+    if (oldest) warmImages.delete(oldest);
+  }
+}
+
+async function resolvePreview(asset: Asset): Promise<string> {
+  const cached = previewUrlCache.get(asset.path);
+  if (cached) return cached;
+  const url = (await getPreview(asset.path)) ?? assetUrl(asset.path);
+  previewUrlCache.set(asset.path, url);
+  return url;
+}
+
+// Prefetch a neighbor's preview (generate + decode) ahead of navigation.
+function prefetch(asset: Asset | null) {
+  if (!asset || asset.kind !== "image") return;
+  resolvePreview(asset).then(warmImage).catch(() => {});
+}
+
 interface Props {
   asset: Asset | null;
   total: number;
   position: { index: number; total: number } | null;
   onNavigate: (delta: number) => void;
+  prevAsset: Asset | null;
+  nextAsset: Asset | null;
 }
 
-export function PreviewPane({ asset, total, position, onNavigate }: Props) {
-  const url = useMemo(() => (asset ? assetUrl(asset.path) : null), [asset]);
+export function PreviewPane({
+  asset,
+  total,
+  position,
+  onNavigate,
+  prevAsset,
+  nextAsset,
+}: Props) {
   const canCycle = !!position && position.total > 1;
+
+  // For images we show a cached, screen-sized preview; other kinds render the
+  // original natively (video/pdf/audio elements handle their own loading).
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const originalUrl = useMemo(
+    () => (asset ? assetUrl(asset.path) : null),
+    [asset]
+  );
+
+  useEffect(() => {
+    if (!asset || asset.kind !== "image") {
+      setImgUrl(null);
+      return;
+    }
+    const cached = previewUrlCache.get(asset.path);
+    if (cached) {
+      setImgUrl(cached); // instant path (prefetched or previously viewed)
+      return;
+    }
+    let alive = true;
+    setImgUrl(null); // show spinner rather than decoding the huge original
+    resolvePreview(asset).then((url) => {
+      warmImage(url);
+      if (alive) setImgUrl(url);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [asset]);
+
+  // Warm the neighbours so the next/prev step is instant.
+  useEffect(() => {
+    prefetch(prevAsset);
+    prefetch(nextAsset);
+  }, [prevAsset, nextAsset]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const tag = (e.target as HTMLElement).tagName;
-    // Let focused media controls handle arrow keys (scrubbing/volume).
-    if (tag === "VIDEO" || tag === "AUDIO") return;
+    if (tag === "VIDEO" || tag === "AUDIO") return; // let media controls handle it
     if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
       e.preventDefault();
       onNavigate(-1);
@@ -94,18 +168,23 @@ export function PreviewPane({ asset, total, position, onNavigate }: Props) {
         )}
 
         <div className="stage-inner" key={asset.id}>
-          {asset.kind === "image" && <img src={url!} alt={asset.name} />}
+          {asset.kind === "image" &&
+            (imgUrl ? (
+              <img src={imgUrl} alt={asset.name} decoding="async" />
+            ) : (
+              <span className="spinner stage-spinner" />
+            ))}
           {asset.kind === "video" && (
-            <video src={url!} controls autoPlay={false} preload="metadata" />
+            <video src={originalUrl!} controls autoPlay={false} preload="metadata" />
           )}
           {asset.kind === "audio" && (
             <div className="audio-card">
               <div className="glyph">🎵</div>
-              <audio src={url!} controls />
+              <audio src={originalUrl!} controls />
             </div>
           )}
           {asset.kind === "pdf" && (
-            <iframe className="pdf-frame" src={url!} title={asset.name} />
+            <iframe className="pdf-frame" src={originalUrl!} title={asset.name} />
           )}
           {asset.kind === "other" && (
             <div className="audio-card">

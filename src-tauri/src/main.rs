@@ -382,6 +382,30 @@ fn get_thumb(path: String, size: u32, state: State<AppState>) -> Result<Option<S
     Ok(thumb.map(|p| p.to_string_lossy().to_string()))
 }
 
+/// A cached, screen-sized preview for an image (so we don't decode the full
+/// multi-megapixel/HEIC original on every step). Returns None for non-images —
+/// the frontend renders those (video/pdf/audio) natively from the original.
+#[tauri::command]
+fn get_preview(path: String, state: State<AppState>) -> Result<Option<String>, String> {
+    let p = std::path::Path::new(&path);
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    if metadata::classify(&ext) != "image" {
+        return Ok(None);
+    }
+    let mtime = std::fs::metadata(p)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let preview = thumbs::ensure(&state.cache_dir, &path, "image", mtime, 2560);
+    Ok(preview.map(|p| p.to_string_lossy().to_string()))
+}
+
 #[tauri::command]
 fn reveal_in_finder(path: String) -> Result<(), String> {
     Command::new("open")
@@ -439,6 +463,7 @@ fn main() {
             list_assets,
             search_assets,
             get_thumb,
+            get_preview,
             reveal_in_finder,
         ])
         .run(tauri::generate_context!())

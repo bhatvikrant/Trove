@@ -460,6 +460,11 @@ button {
 .preview-pos {
   color: var(--text-faint);
 }
+.stage-spinner {
+  width: 30px;
+  height: 30px;
+  border-width: 3px;
+}
 .preview-stage img,
 .preview-stage video {
   max-width: 100%;

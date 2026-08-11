@@ -73,6 +73,16 @@ export function assetUrl(path: string): string {
   return convertFileSrc(path);
 }
 
+/**
+ * A webview-loadable URL for a cached, screen-sized preview of an image, so the
+ * pane doesn't decode the full original on every step. Returns null for
+ * non-images (render those from the original) or if a preview can't be made.
+ */
+export async function getPreview(path: string): Promise<string | null> {
+  const previewPath = await invoke<string | null>("get_preview", { path });
+  return previewPath ? convertFileSrc(previewPath) : null;
+}
+
 /** Reveal a file in Finder. */
 export async function revealInFinder(path: string): Promise<void> {
   await invoke("reveal_in_finder", { path });

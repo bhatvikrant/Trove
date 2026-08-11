@@ -36,6 +36,17 @@ export default function App() {
     return index < 0 ? null : { index, total: visibleAssets.length };
   }, [selected, visibleAssets]);
 
+  // The assets immediately before/after the selected one — the preview pane
+  // prefetches these so stepping is instant.
+  const neighbors = useMemo(() => {
+    if (!position || visibleAssets.length < 2) return { prev: null, next: null };
+    const n = visibleAssets.length;
+    return {
+      prev: visibleAssets[(position.index - 1 + n) % n],
+      next: visibleAssets[(position.index + 1) % n],
+    };
+  }, [position, visibleAssets]);
+
   // Move selection to the asset `delta` steps away, wrapping around the ends.
   const selectRelative = useCallback(
     (delta: number) => {
@@ -180,6 +191,8 @@ export default function App() {
               total={total}
               position={position}
               onNavigate={selectRelative}
+              prevAsset={neighbors.prev}
+              nextAsset={neighbors.next}
             />
           </>
         ) : (
