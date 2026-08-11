@@ -29,6 +29,7 @@ export function PeopleGrid({
   // Pointer-based drag (not HTML5 DnD, which Tauri's native file-drop blocks).
   const onCardPointerDown = (e: React.PointerEvent, p: Person) => {
     if (editing || e.button !== 0) return;
+    e.preventDefault(); // stop text selection starting on drag
     const sx = e.clientX;
     const sy = e.clientY;
     dragRef.current = { source: p.clusterId, over: null, moved: false };
@@ -37,6 +38,7 @@ export function PeopleGrid({
       const d = dragRef.current;
       if (!d) return;
       if (!d.moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+      if (!d.moved) document.body.classList.add("dragging-face");
       d.moved = true;
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
       const card = el?.closest("[data-cluster]") as HTMLElement | null;
@@ -47,6 +49,7 @@ export function PeopleGrid({
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("dragging-face");
       const d = dragRef.current;
       dragRef.current = null;
       setDrag(null);
