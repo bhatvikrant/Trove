@@ -288,6 +288,13 @@ export function PreviewPane({
         >
           {asset.favorite ? "★" : "☆"}
         </button>
+        <button
+          className="btn"
+          title="Copy full path"
+          onClick={() => navigator.clipboard?.writeText(asset.path)}
+        >
+          Copy path
+        </button>
         <button className="btn" onClick={() => revealInFinder(asset.path)}>
           Reveal in Finder
         </button>

@@ -1461,6 +1461,47 @@ button:disabled {
   color: var(--text-dim);
 }
 
+/* ---------- Context menu ---------- */
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 168px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.ctx-item:hover:not(:disabled),
+.ctx-item:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.ctx-item.danger {
+  color: #e5484d;
+}
+.ctx-item.danger:hover:not(:disabled) {
+  background: rgba(229, 72, 77, 0.12);
+}
+.ctx-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ---------- Reduced motion ----------
    Honour the OS "reduce motion" setting: drop decorative transitions and
    animations. The loading spinner is kept — it communicates state, not decor. */

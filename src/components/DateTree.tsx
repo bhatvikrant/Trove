@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { listAssets, searchAssets } from "../api";
+import { listAssets, revealInFinder, searchAssets } from "../api";
 import type {
   Asset,
   AssetFilter,
@@ -8,6 +8,7 @@ import type {
   Kind,
 } from "../types";
 import { AssetThumb } from "./AssetThumb";
+import { ContextMenu } from "./ContextMenu";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -85,6 +86,8 @@ export function DateTree({
   const [activeKey, setActiveKey] = useState<string | null>(null);
   // Inline rename state: which asset id is being edited and its draft value.
   const [editing, setEditing] = useState<{ id: number; value: string } | null>(null);
+  // Right-click context menu anchored on an asset row.
+  const [menu, setMenu] = useState<{ x: number; y: number; asset: Asset } | null>(null);
   const skipBlurRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -597,6 +600,19 @@ export function DateTree({
                     (activeKey === row.key ? "focused" : "")
                   }
                   onClick={() => onRowClick(row)}
+                  onContextMenu={
+                    row.kind === "asset"
+                      ? (e) => {
+                          e.preventDefault();
+                          onSelect((row as Extract<Row, { kind: "asset" }>).asset);
+                          setMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            asset: (row as Extract<Row, { kind: "asset" }>).asset,
+                          });
+                        }
+                      : undefined
+                  }
                 >
                   {hasChildren ? (
                     <span className={`tree-caret ${isOpen ? "open" : ""}`}>▶</span>
@@ -689,6 +705,33 @@ export function DateTree({
           })}
         </div>
       </div>
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              label: "Copy name",
+              onClick: () => navigator.clipboard?.writeText(menu.asset.name),
+            },
+            {
+              label: "Copy path",
+              onClick: () => navigator.clipboard?.writeText(menu.asset.path),
+            },
+            {
+              label: "Reveal in Finder",
+              onClick: () => revealInFinder(menu.asset.path),
+            },
+            {
+              label: "Rename",
+              onClick: () =>
+                setEditing({ id: menu.asset.id, value: menu.asset.name }),
+            },
+          ]}
+        />
+      )}
     </>
   );
 }
