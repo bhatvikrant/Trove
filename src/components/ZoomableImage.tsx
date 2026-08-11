@@ -25,9 +25,6 @@ const IDENTITY: Transform = { s: 1, x: 0, y: 0 };
 export function ZoomableImage({ src, alt }: { src: string; alt: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [t, setT] = useState<Transform>(IDENTITY);
-  // Mirror of `t` for event handlers that need the latest value synchronously.
-  const tRef = useRef<Transform>(IDENTITY);
-  tRef.current = t;
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
 
   // Reset to fit whenever the displayed image changes.
@@ -69,18 +66,16 @@ export function ZoomableImage({ src, alt }: { src: string; alt: string }) {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      // When zoomed in, a plain two-finger scroll pans; trackpad pinch (which
-      // arrives as ctrl+wheel) always zooms.
-      if (!e.ctrlKey && tRef.current.s > 1) {
-        setT((cur) => {
-          const c = clamp(cur.s, cur.x - e.deltaX, cur.y - e.deltaY);
-          return { ...cur, x: c.x, y: c.y };
-        });
-        return;
-      }
+      // Normalise the delta: mouse wheels often report lines (deltaMode 1) or
+      // pages (2), not pixels, so raw deltaY is tiny and barely zooms. Clamp the
+      // per-event step so a single notch can't jump too far.
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 16;
+      else if (e.deltaMode === 2) dy *= rect.height || 800;
+      dy = Math.max(-120, Math.min(120, dy));
       const cx = e.clientX - (rect.left + rect.width / 2);
       const cy = e.clientY - (rect.top + rect.height / 2);
-      const factor = Math.exp(-e.deltaY * 0.0018);
+      const factor = Math.exp(-dy * 0.0025);
       applyZoom((s) => s * factor, cx, cy);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
