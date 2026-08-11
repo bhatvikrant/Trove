@@ -469,6 +469,44 @@ button:disabled {
   padding: 16px 20px;
   min-height: 0;
   position: relative;
+  cursor: grab;
+  touch-action: none;
+  overflow: hidden;
+}
+.places-map-stage:active {
+  cursor: grabbing;
+}
+.map-zoom {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-zoom button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 7px;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow);
+}
+.map-zoom button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.map-zoom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.world-svg {
+  cursor: inherit;
 }
 .world-svg {
   width: 100%;
