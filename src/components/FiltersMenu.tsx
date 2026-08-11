@@ -67,7 +67,9 @@ export function FiltersMenu({
         className={`date-chip ${n ? "active" : ""}`}
         onClick={() => setOpen((o) => !o)}
       >
-        <span>⚙︎</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+        </svg>
         <span>Filters</span>
         {n > 0 && <span className="filter-count">{n}</span>}
         <span style={{ opacity: 0.5, fontSize: 10 }}>▾</span>
