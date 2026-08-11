@@ -155,21 +155,24 @@ button:disabled {
   gap: 6px;
   transition: background 0.12s;
 }
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--hover);
+}
+.btn:disabled {
+  opacity: 0.45;
 }
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
 }
-.btn.primary:hover {
+.btn.primary:hover:not(:disabled) {
   opacity: 0.9;
 }
 .btn.danger {
   color: #e5484d;
 }
-.btn.danger:hover {
+.btn.danger:hover:not(:disabled) {
   background: rgba(229, 72, 77, 0.12);
   border-color: #e5484d;
 }
