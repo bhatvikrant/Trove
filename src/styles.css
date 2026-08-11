@@ -1059,10 +1059,14 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Let people select/copy the metadata (body sets user-select:none globally).
+   The filename keeps double-click-to-rename, so it stays non-selectable. */
 .preview-info .meta {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  user-select: text;
+  cursor: text;
 }
 .preview-info .grow {
   flex: 1;
