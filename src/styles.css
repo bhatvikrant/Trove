@@ -1460,6 +1460,63 @@ body.dragging-face * {
 .modal-body {
   padding: 16px;
 }
+
+/* ---------- Settings: sidebar + panel ---------- */
+.settings-modal {
+  max-width: 760px;
+}
+.settings-layout {
+  display: flex;
+  height: min(60vh, 480px);
+  min-height: 340px;
+}
+.settings-nav {
+  flex: 0 0 196px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.settings-nav-item svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+.settings-nav-item:hover {
+  background: var(--hover);
+}
+.settings-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.settings-nav-item.active svg {
+  opacity: 1;
+}
+.settings-panel {
+  flex: 1;
+  padding: 22px 24px;
+  overflow-y: auto;
+}
+.set-panel-title {
+  font-size: 15px !important;
+  margin-bottom: 8px !important;
+}
 .set-sec h3 {
   margin: 0 0 6px;
   font-size: 13px;

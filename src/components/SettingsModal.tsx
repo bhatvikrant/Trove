@@ -3,9 +3,33 @@ import { getSettings, setStoreInFolder, setVisionQuality } from "../api";
 import type { VisionQuality } from "../types";
 import { showToast } from "../toast";
 
+type SectionId = "analysis" | "storage";
+
+const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
+  {
+    id: "analysis",
+    label: "Photo analysis",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" />
+        <path d="M18.5 14.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+      </svg>
+    ),
+  },
+  {
+    id: "storage",
+    label: "Portable data",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7a2 2 0 0 1 2-2h3.6a2 2 0 0 1 1.4.6L11.4 7H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      </svg>
+    ),
+  },
+];
+
 export function SettingsModal({ onClose }: { onClose: () => void }) {
-  // `null` until the saved setting loads, so we don't flash the first option
-  // as selected and then jump to the real one.
+  const [section, setSection] = useState<SectionId>("analysis");
+  // `null` until the saved setting loads, so we don't flash a default.
   const [quality, setQuality] = useState<VisionQuality | null>(null);
   const [storeInFolder, setStoreInFolderState] = useState<boolean | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -23,7 +47,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const prevFocused = document.activeElement as HTMLElement | null;
     modalRef.current
-      ?.querySelector<HTMLElement>('input, button, [tabindex]')
+      ?.querySelector<HTMLElement>("input, button, [tabindex]")
       ?.focus();
     return () => prevFocused?.focus?.();
   }, []);
@@ -76,7 +100,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     );
   };
 
-  const OPTIONS: { id: VisionQuality; title: string; sub: string }[] = [
+  const QUALITY_OPTIONS: { id: VisionQuality; title: string; sub: string }[] = [
     {
       id: "accurate",
       title: "Best accuracy",
@@ -92,7 +116,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal"
+        className="modal settings-modal"
         ref={modalRef}
         role="dialog"
         aria-modal="true"
@@ -105,58 +129,87 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </div>
-        <div className="modal-body">
-          <section className="set-sec">
-            <h3>Photo analysis</h3>
-            <p className="set-desc">
-              Trove scans photos for scene labels and text (OCR). Choose how
-              thorough the text recognition is.
-            </p>
-            <div className="set-options">
-              {OPTIONS.map((o) => (
-                <label key={o.id} className={`set-opt ${quality === o.id ? "on" : ""}`}>
+
+        <div className="settings-layout">
+          <nav className="settings-nav" aria-label="Settings sections">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                className={`settings-nav-item ${section === s.id ? "active" : ""}`}
+                aria-current={section === s.id}
+                onClick={() => setSection(s.id)}
+              >
+                {s.icon}
+                <span>{s.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="settings-panel">
+            {section === "analysis" && (
+              <section className="set-sec">
+                <h3 className="set-panel-title">Photo analysis</h3>
+                <p className="set-desc">
+                  Trove scans photos for scene labels and text (OCR). Choose how
+                  thorough the text recognition is.
+                </p>
+                <div className="set-options">
+                  {QUALITY_OPTIONS.map((o) => (
+                    <label
+                      key={o.id}
+                      className={`set-opt ${quality === o.id ? "on" : ""}`}
+                    >
+                      <input
+                        type="radio"
+                        name="vision-quality"
+                        checked={quality === o.id}
+                        onChange={() => choose(o.id)}
+                      />
+                      <span className="set-opt-body">
+                        <span className="set-opt-title">{o.title}</span>
+                        <span className="set-opt-sub">{o.sub}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="set-note">
+                  Changing this re-analyzes your photos in the background.
+                </p>
+              </section>
+            )}
+
+            {section === "storage" && (
+              <section className="set-sec">
+                <h3 className="set-panel-title">Portable folder data</h3>
+                <p className="set-desc">
+                  Store favorites, people names, and analysis results in a
+                  hidden <code>.trove</code> folder inside your media folder. The
+                  folder then carries its own data — open it on another Mac and
+                  everything is restored, with no re-analysis of unchanged
+                  photos.
+                </p>
+                <label
+                  className={`set-toggle ${storeInFolder ? "on" : ""}`}
+                >
                   <input
-                    type="radio"
-                    name="vision-quality"
-                    checked={quality === o.id}
-                    onChange={() => choose(o.id)}
+                    type="checkbox"
+                    checked={!!storeInFolder}
+                    disabled={storeInFolder === null}
+                    onChange={(e) => toggleStore(e.target.checked)}
                   />
                   <span className="set-opt-body">
-                    <span className="set-opt-title">{o.title}</span>
-                    <span className="set-opt-sub">{o.sub}</span>
+                    <span className="set-opt-title">
+                      Store data inside the folder
+                    </span>
+                    <span className="set-opt-sub">
+                      Off keeps everything on this Mac only. Names travel with
+                      the folder, so sharing it shares who you've tagged.
+                    </span>
                   </span>
                 </label>
-              ))}
-            </div>
-            <p className="set-note">
-              Changing this re-analyzes your photos in the background.
-            </p>
-          </section>
-
-          <section className="set-sec">
-            <h3>Portable folder data</h3>
-            <p className="set-desc">
-              Store favorites, people names, and analysis results in a hidden{" "}
-              <code>.trove</code> folder inside your media folder. The folder
-              then carries its own data — open it on another Mac and everything
-              is restored, with no re-analysis of unchanged photos.
-            </p>
-            <label className={`set-toggle ${storeInFolder ? "on" : ""}`}>
-              <input
-                type="checkbox"
-                checked={!!storeInFolder}
-                disabled={storeInFolder === null}
-                onChange={(e) => toggleStore(e.target.checked)}
-              />
-              <span className="set-opt-body">
-                <span className="set-opt-title">Store data inside the folder</span>
-                <span className="set-opt-sub">
-                  Off keeps everything on this Mac only. Names travel with the
-                  folder, so sharing it shares who you've tagged.
-                </span>
-              </span>
-            </label>
-          </section>
+              </section>
+            )}
+          </div>
         </div>
       </div>
     </div>
