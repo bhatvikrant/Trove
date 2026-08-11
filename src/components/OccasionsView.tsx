@@ -59,7 +59,7 @@ export function OccasionsView({ occasions, onAdd, onDelete, onPlay }: Props) {
         </div>
       ) : occasions.length === 0 ? (
         <div className="empty" style={{ flex: 1 }}>
-          <div className="glyph">🎂</div>
+          <div className="glyph">🎉</div>
           <h2>No occasions yet</h2>
           <p>Add a date above to start collecting its memories.</p>
         </div>

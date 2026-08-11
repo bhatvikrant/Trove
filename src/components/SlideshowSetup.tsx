@@ -5,12 +5,14 @@ import {
   getFaceThumb,
   getPeople,
   listSlideshowPresets,
+  listSpecialDates,
   saveSlideshowPreset,
 } from "../api";
 import {
   DEFAULT_SLIDESHOW_CONFIG,
   type Kind,
   type Person,
+  type SavedSpecialDate,
   type SlideshowConfig,
   type SlideshowPreset,
   type SpecialDate,
@@ -80,6 +82,7 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
   );
   const [people, setPeople] = useState<Person[]>([]);
   const [presets, setPresets] = useState<SlideshowPreset[]>([]);
+  const [saved, setSaved] = useState<SavedSpecialDate[]>([]);
   const [count, setCount] = useState<number | null>(null);
   const [counting, setCounting] = useState(false);
   const [pendingDate, setPendingDate] = useState<{ month: number; day: number } | null>(null);
@@ -92,6 +95,7 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
   useEffect(() => {
     getPeople().then((p) => setPeople(p.filter((x) => x.name))).catch(() => {});
     listSlideshowPresets().then(setPresets).catch(() => {});
+    listSpecialDates().then(setSaved).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -112,13 +116,16 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
     return () => clearTimeout(t);
   }, [config]);
 
+  const addSpecialDate = (sd: SpecialDate) => {
+    const exists = config.specialDates.some(
+      (x) => x.month === sd.month && x.day === sd.day
+    );
+    if (!exists) set({ specialDates: [...config.specialDates, sd] });
+  };
+
   const addDate = () => {
     if (!pendingDate) return;
-    const { month: m, day: d } = pendingDate;
-    const exists = config.specialDates.some((x) => x.month === m && x.day === d);
-    if (!exists) {
-      set({ specialDates: [...config.specialDates, { month: m, day: d }] });
-    }
+    addSpecialDate({ month: pendingDate.month, day: pendingDate.day });
     setPendingDate(null);
   };
 
@@ -222,12 +229,44 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
                 Add
               </button>
             </div>
+
+            {saved.length > 0 && (
+              <div className="ss-saved">
+                <span className="ss-saved-label">From your occasions</span>
+                <div className="ss-chips">
+                  {saved.map((o) => {
+                    const added = config.specialDates.some(
+                      (x) => x.month === o.month && x.day === o.day
+                    );
+                    return (
+                      <button
+                        key={o.id}
+                        className={`ss-saved-chip ${added ? "added" : ""}`}
+                        disabled={added}
+                        onClick={() =>
+                          addSpecialDate({
+                            month: o.month,
+                            day: o.day,
+                            label: o.label ?? undefined,
+                          })
+                        }
+                        title={added ? "Already added" : "Add to slideshow"}
+                      >
+                        {added ? "✓ " : "+ "}
+                        {o.label ?? `${MONTHS[o.month - 1]} ${o.day}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {config.specialDates.length > 0 && (
               <>
                 <div className="ss-chips">
                   {config.specialDates.map((sd) => (
                     <span key={`${sd.month}-${sd.day}`} className="fc-chip">
-                      🎂 {MONTHS[sd.month - 1]} {sd.day}
+                      🎉 {MONTHS[sd.month - 1]} {sd.day}
                       <button aria-label="Remove date" onClick={() => removeDate(sd)}>
                         ✕
                       </button>

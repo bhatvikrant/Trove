@@ -2404,3 +2404,32 @@ body.dragging-face * {
 .ss-date-add {
   align-items: flex-start;
 }
+
+/* "From your occasions" quick-add chips in the slideshow setup. */
+.ss-saved {
+  margin-top: 12px;
+}
+.ss-saved-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.ss-saved-chip {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 20px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ss-saved-chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ss-saved-chip.added {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
