@@ -328,6 +328,7 @@ export default function App() {
         onPickFolder={handlePickFolder}
         onRescan={handleRescan}
         onHome={handleHome}
+        onSettings={() => setSettingsOpen(true)}
         canRescan={!!root && !indexing}
       />
 
