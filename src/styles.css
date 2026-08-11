@@ -63,6 +63,43 @@ button:disabled {
   cursor: default;
 }
 
+/* ---------- Focus & press feedback ----------
+   A single, consistent keyboard focus ring and press response across the
+   interactive controls that were previously missing one. */
+.btn:focus-visible,
+.date-chip:focus-visible,
+.lens-tab:focus-visible,
+.seg-btn:focus-visible,
+.fc-clear:focus-visible,
+.fc-chip button:focus-visible,
+.open-card:focus-visible,
+.open-card-remove:focus-visible,
+.loc-chip:focus-visible,
+.chk:has(input:focus-visible),
+.set-opt:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn:active:not(:disabled),
+.date-chip:active,
+.lens-tab:active:not(:disabled),
+.icon-btn:active:not(:disabled),
+.seg-btn:active,
+.loc-chip:active,
+.open-card:not(.disabled):active {
+  transform: scale(0.97);
+}
+.btn,
+.date-chip,
+.lens-tab,
+.icon-btn,
+.seg-btn,
+.loc-chip,
+.open-card {
+  transition: background 0.12s, color 0.12s, border-color 0.12s,
+    transform 0.06s ease;
+}
+
 /* ---------- App shell ---------- */
 .app {
   display: flex;
@@ -451,6 +488,111 @@ button:disabled {
 }
 .star-btn.on:hover {
   background: rgba(245, 197, 24, 0.12);
+}
+
+/* ---------- People ---------- */
+.face-thumb {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+.face-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding-right: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.person-row:hover {
+  background: var(--hover);
+}
+.person-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.person-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person-name.unnamed {
+  color: var(--text-faint);
+  font-weight: 400;
+  font-style: italic;
+}
+.person-count {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.people-grid-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px;
+}
+.people-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  transition: border-color 0.12s, background 0.12s;
+}
+.people-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.people-card .face-thumb {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 84px;
+  font-size: 36px;
+}
+.people-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.people-card-name.unnamed {
+  color: var(--text-faint);
+  font-weight: 400;
+  font-style: italic;
+}
+.people-card-count {
+  font-size: 11.5px;
+  color: var(--text-faint);
 }
 
 /* ---------- Places map ---------- */
