@@ -394,6 +394,24 @@ button:disabled {
   text-overflow: ellipsis;
   font-size: 12px;
 }
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+.rename-input-lg {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 3px 7px;
+  max-width: 360px;
+}
 
 /* ---------- Preview pane ---------- */
 .preview {

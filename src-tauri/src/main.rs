@@ -406,6 +406,53 @@ fn get_preview(path: String, state: State<AppState>) -> Result<Option<String>, S
     Ok(preview.map(|p| p.to_string_lossy().to_string()))
 }
 
+/// Rename an asset on disk (within its folder) and update the index. Returns the
+/// updated row so the UI can refresh the selection.
+#[tauri::command]
+fn rename_asset(path: String, name: String, state: State<AppState>) -> Result<Asset, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Name can’t be empty".into());
+    }
+    if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
+        return Err("Name can’t contain slashes".into());
+    }
+    let old = std::path::Path::new(&path);
+    let parent = old.parent().ok_or("File has no parent folder")?;
+    let new_path = parent.join(name);
+    let new_path_str = new_path.to_string_lossy().to_string();
+
+    if new_path_str != path && new_path.exists() {
+        // Allow case-only renames on case-insensitive filesystems.
+        let same = matches!(
+            (new_path.canonicalize(), old.canonicalize()),
+            (Ok(a), Ok(b)) if a == b
+        );
+        if !same {
+            return Err(format!("“{name}” already exists in this folder"));
+        }
+    }
+
+    std::fs::rename(old, &new_path).map_err(e2s)?;
+    let ext = new_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase());
+
+    let conn = state.db.lock().unwrap();
+    conn.execute(
+        "UPDATE assets SET path=?1, name=?2, ext=?3 WHERE path=?4",
+        rusqlite::params![new_path_str, name, ext, path],
+    )
+    .map_err(e2s)?;
+    conn.query_row(
+        &format!("SELECT {ASSET_COLS} FROM assets WHERE path=?1"),
+        [&new_path_str],
+        map_asset,
+    )
+    .map_err(e2s)
+}
+
 #[tauri::command]
 fn reveal_in_finder(path: String) -> Result<(), String> {
     Command::new("open")
@@ -464,6 +511,7 @@ fn main() {
             search_assets,
             get_thumb,
             get_preview,
+            rename_asset,
             reveal_in_finder,
         ])
         .run(tauri::generate_context!())

@@ -62,6 +62,8 @@ interface Props {
   selected: Asset | null;
   onSelect: (a: Asset) => void;
   onVisibleAssetsChange?: (assets: Asset[]) => void;
+  onRename?: (asset: Asset, newName: string) => void;
+  refreshToken?: number;
 }
 
 export function DateTree({
@@ -71,6 +73,8 @@ export function DateTree({
   selected,
   onSelect,
   onVisibleAssetsChange,
+  onRename,
+  refreshToken,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [assetsByKey, setAssetsByKey] = useState<Map<string, Asset[]>>(new Map());
@@ -79,6 +83,9 @@ export function DateTree({
   const [searchResults, setSearchResults] = useState<Asset[] | null>(null);
   // Key of the keyboard-focused row (stable across expand/collapse re-flattening).
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  // Inline rename state: which asset id is being edited and its draft value.
+  const [editing, setEditing] = useState<{ id: number; value: string } | null>(null);
+  const skipBlurRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -142,11 +149,11 @@ export function DateTree({
     [allExpandableKeys]
   );
 
-  // Reset cached asset lists whenever the tree identity (root/range) changes.
+  // Reset cached asset lists when the tree identity changes or after an edit.
   useEffect(() => {
     setAssetsByKey(new Map());
     setLoadingKeys(new Set());
-  }, [range, tree?.total]);
+  }, [range, tree?.total, refreshToken]);
 
   // Debounced name search across the whole index.
   useEffect(() => {
@@ -600,9 +607,49 @@ export function DateTree({
                   {row.kind === "asset" ? (
                     <>
                       <AssetThumb asset={row.asset} />
-                      <span className="asset-name" title={row.asset.name}>
-                        {row.asset.name}
-                      </span>
+                      {editing?.id === row.asset.id ? (
+                        <input
+                          className="rename-input"
+                          value={editing.value}
+                          autoFocus
+                          onFocus={(e) => e.currentTarget.select()}
+                          onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            setEditing({ id: row.asset.id, value: e.target.value })
+                          }
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === "Enter") {
+                              skipBlurRef.current = true;
+                              onRename?.(row.asset, editing.value);
+                              setEditing(null);
+                            } else if (e.key === "Escape") {
+                              skipBlurRef.current = true;
+                              setEditing(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (skipBlurRef.current) {
+                              skipBlurRef.current = false;
+                              return;
+                            }
+                            onRename?.(row.asset, editing.value);
+                            setEditing(null);
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className="asset-name"
+                          title={row.asset.name}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setEditing({ id: row.asset.id, value: row.asset.name });
+                          }}
+                        >
+                          {row.asset.name}
+                        </span>
+                      )}
                     </>
                   ) : row.kind === "loading" ? (
                     <span className="tree-label" style={{ color: "var(--text-faint)" }}>

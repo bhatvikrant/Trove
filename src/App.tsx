@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navbar } from "./components/Navbar";
 import { DateTree } from "./components/DateTree";
 import { PreviewPane } from "./components/PreviewPane";
+import { message } from "@tauri-apps/plugin-dialog";
 import {
   getDateTree,
   onIndexProgress,
   pickFolder,
+  renameAsset,
   rescan,
   setRoot,
 } from "./api";
@@ -29,6 +31,23 @@ export default function App() {
   // The ordered assets currently visible in the tree, reported up by DateTree,
   // so the preview pane can step to the one before/after the selected asset.
   const [visibleAssets, setVisibleAssets] = useState<Asset[]>([]);
+  // Bumped after a rename/delete to force the tree to re-fetch cached lists.
+  const [dataVersion, setDataVersion] = useState(0);
+
+  const handleRename = useCallback(
+    async (asset: Asset, newName: string) => {
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === asset.name) return;
+      try {
+        const updated = await renameAsset(asset.path, trimmed);
+        setSelected((cur) => (cur && cur.id === updated.id ? updated : cur));
+        setDataVersion((v) => v + 1);
+      } catch (e) {
+        await message(String(e), { title: "Couldn’t rename", kind: "error" });
+      }
+    },
+    []
+  );
 
   const position = useMemo(() => {
     if (!selected) return null;
@@ -183,6 +202,8 @@ export default function App() {
                 selected={selected}
                 onSelect={setSelected}
                 onVisibleAssetsChange={setVisibleAssets}
+                onRename={handleRename}
+                refreshToken={dataVersion}
               />
             </div>
             <div className="resizer" onMouseDown={onResize} />
@@ -193,6 +214,7 @@ export default function App() {
               onNavigate={selectRelative}
               prevAsset={neighbors.prev}
               nextAsset={neighbors.next}
+              onRename={handleRename}
             />
           </>
         ) : (

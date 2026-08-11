@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { assetUrl, getPreview, revealInFinder } from "../api";
 import type { Asset } from "../types";
 
@@ -63,6 +63,7 @@ interface Props {
   onNavigate: (delta: number) => void;
   prevAsset: Asset | null;
   nextAsset: Asset | null;
+  onRename: (asset: Asset, newName: string) => void;
 }
 
 export function PreviewPane({
@@ -72,8 +73,22 @@ export function PreviewPane({
   onNavigate,
   prevAsset,
   nextAsset,
+  onRename,
 }: Props) {
   const canCycle = !!position && position.total > 1;
+
+  // Inline rename of the filename shown in the info bar.
+  const [renaming, setRenaming] = useState(false);
+  const [nameValue, setNameValue] = useState("");
+  const skipBlur = useRef(false);
+  useEffect(() => {
+    setRenaming(false); // cancel any in-progress edit when the asset changes
+  }, [asset?.id]);
+
+  const commitRename = () => {
+    if (asset) onRename(asset, nameValue);
+    setRenaming(false);
+  };
 
   // For images we show a cached, screen-sized preview; other kinds render the
   // original natively (video/pdf/audio elements handle their own loading).
@@ -198,9 +213,43 @@ export function PreviewPane({
       </div>
 
       <div className="preview-info">
-        <span className="name" title={asset.path}>
-          {asset.name}
-        </span>
+        {renaming ? (
+          <input
+            className="rename-input rename-input-lg"
+            value={nameValue}
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setNameValue(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") {
+                skipBlur.current = true;
+                commitRename();
+              } else if (e.key === "Escape") {
+                skipBlur.current = true;
+                setRenaming(false);
+              }
+            }}
+            onBlur={() => {
+              if (skipBlur.current) {
+                skipBlur.current = false;
+                return;
+              }
+              commitRename();
+            }}
+          />
+        ) : (
+          <span
+            className="name"
+            title={`${asset.path}\n(double-click to rename)`}
+            onDoubleClick={() => {
+              setNameValue(asset.name);
+              setRenaming(true);
+            }}
+          >
+            {asset.name}
+          </span>
+        )}
         <span className="meta">{fmtDate(asset.captureTs)}</span>
         <span className="meta">{humanSize(asset.size)}</span>
         {asset.ext && <span className="meta">{asset.ext.toUpperCase()}</span>}

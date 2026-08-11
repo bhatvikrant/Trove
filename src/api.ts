@@ -83,6 +83,11 @@ export async function getPreview(path: string): Promise<string | null> {
   return previewPath ? convertFileSrc(previewPath) : null;
 }
 
+/** Rename an asset on disk (within its folder). Returns the updated row. */
+export async function renameAsset(path: string, name: string): Promise<Asset> {
+  return invoke("rename_asset", { path, name });
+}
+
 /** Reveal a file in Finder. */
 export async function revealInFinder(path: string): Promise<void> {
   await invoke("reveal_in_finder", { path });
