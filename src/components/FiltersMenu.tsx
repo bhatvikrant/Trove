@@ -26,8 +26,15 @@ export function activeFacetCount(f: AssetFilter): number {
     (f.favorite ? 1 : 0) +
     (f.cameras.length ? 1 : 0) +
     (f.formats.length ? 1 : 0) +
-    (f.orientation ? 1 : 0)
+    (f.orientation ? 1 : 0) +
+    (f.scenes.length ? 1 : 0)
   );
+}
+
+/** Prettify a Vision label like "printed_page" → "Printed page". */
+export function prettyScene(s: string): string {
+  const t = s.replace(/_/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 export function FiltersMenu({
@@ -38,7 +45,7 @@ export function FiltersMenu({
   onChange: (f: AssetFilter) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [facets, setFacets] = useState<Facets>({ cameras: [], formats: [] });
+  const [facets, setFacets] = useState<Facets>({ cameras: [], formats: [], scenes: [] });
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,6 +99,25 @@ export function FiltersMenu({
               ))}
             </div>
           </section>
+
+          {facets.scenes.length > 0 && (
+            <section className="fsec">
+              <h4>Scene</h4>
+              <div className="chk-list">
+                {facets.scenes.map((sc) => (
+                  <label key={sc.value} className={`chk ${filter.scenes.includes(sc.value) ? "on" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={filter.scenes.includes(sc.value)}
+                      onChange={() => onChange({ ...filter, scenes: toggle(filter.scenes, sc.value) })}
+                    />
+                    <span className="chk-label">{prettyScene(sc.value)}</span>
+                    <span className="chk-ct">{sc.count.toLocaleString()}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="fsec">
             <h4>Orientation</h4>

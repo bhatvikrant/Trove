@@ -12,6 +12,7 @@ import type {
   Places,
   QuickLocations,
   RecentFolder,
+  VisionProgress,
 } from "./types";
 
 /** Prompt the user to choose a folder to index. Returns null if cancelled. */
@@ -164,4 +165,11 @@ export async function onIndexProgress(
   cb: (p: IndexProgress) => void
 ): Promise<UnlistenFn> {
   return listen<IndexProgress>("index-progress", (e) => cb(e.payload));
+}
+
+/** Subscribe to Vision (scene/OCR) enrichment progress. */
+export async function onVisionProgress(
+  cb: (p: VisionProgress) => void
+): Promise<UnlistenFn> {
+  return listen<VisionProgress>("vision-progress", (e) => cb(e.payload));
 }

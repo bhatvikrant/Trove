@@ -16,6 +16,7 @@ import {
   getPlaces,
   onIndexProgress,
   onMenuOpenFolder,
+  onVisionProgress,
   pickFolder,
   renameAsset,
   rescan,
@@ -30,6 +31,7 @@ import {
   type IndexProgress,
   type Lens,
   type Places,
+  type VisionProgress,
 } from "./types";
 
 export default function App() {
@@ -40,6 +42,7 @@ export default function App() {
   const [places, setPlaces] = useState<Places | null>(null);
   const [focusPlace, setFocusPlace] = useState<{ country: string; city?: string } | null>(null);
   const [tree, setTree] = useState<DateTreeData | null>(null);
+  const [vision, setVision] = useState<VisionProgress | null>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
   const [sidebarW, setSidebarW] = useState(340);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -170,6 +173,13 @@ export default function App() {
     return () => unlisten?.();
   }, [refreshTree]);
 
+  // Track Vision (scene/OCR) enrichment progress.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    onVisionProgress((p) => setVision(p.done ? null : p)).then((fn) => (un = fn));
+    return () => un?.();
+  }, []);
+
   // Re-query the tree whenever the filter changes.
   useEffect(() => {
     if (root) refreshTree();
@@ -264,6 +274,7 @@ export default function App() {
     setVisibleAssets([]);
     setFilter(EMPTY_FILTER);
     setLens("date");
+    setVision(null);
   }, []);
 
   const indexing = !!progress && !progress.done;
@@ -330,6 +341,13 @@ export default function App() {
                   <span className="spinner" />
                   Indexing… {progress?.indexed.toLocaleString()} assets
                   {progress?.total ? ` of ~${progress.total.toLocaleString()}` : ""}
+                </div>
+              )}
+              {!indexing && vision && (
+                <div className="index-status">
+                  <span className="spinner" />
+                  Analyzing photos… {vision.processed.toLocaleString()} /{" "}
+                  {vision.total.toLocaleString()}
                 </div>
               )}
               {lens === "date" ? (

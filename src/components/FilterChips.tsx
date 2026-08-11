@@ -1,4 +1,5 @@
 import type { AssetFilter, Kind } from "../types";
+import { prettyScene } from "./FiltersMenu";
 
 const KIND_LABEL: Record<Kind, string> = {
   image: "Photos",
@@ -51,6 +52,13 @@ export function FilterChips({
       clear: () => onChange({ ...filter, formats: filter.formats.filter((x) => x !== f) }),
     })
   );
+  filter.scenes.forEach((s) =>
+    chips.push({
+      key: `s:${s}`,
+      label: prettyScene(s),
+      clear: () => onChange({ ...filter, scenes: filter.scenes.filter((x) => x !== s) }),
+    })
+  );
 
   if (chips.length === 0) return null;
 
@@ -75,6 +83,7 @@ export function FilterChips({
             cameras: [],
             formats: [],
             orientation: null,
+            scenes: [],
           })
         }
       >

@@ -47,9 +47,10 @@ pub fn spawn(
     root: PathBuf,
     generation: Arc<AtomicU64>,
     my_gen: u64,
+    vision_helper: Option<PathBuf>,
 ) {
     std::thread::spawn(move || {
-        if let Err(e) = run(&app, &db_path, &root, &generation, my_gen) {
+        if let Err(e) = run(&app, &db_path, &root, &generation, my_gen, vision_helper) {
             eprintln!("indexing error: {e}");
             emit(
                 &app,
@@ -75,6 +76,7 @@ fn run(
     root: &Path,
     generation: &Arc<AtomicU64>,
     my_gen: u64,
+    vision_helper: Option<PathBuf>,
 ) -> rusqlite::Result<()> {
     let mut conn = db::open(db_path)?;
 
@@ -173,6 +175,7 @@ fn run(
                         camera=excluded.camera, width=excluded.width, height=excluded.height,
                         lat=excluded.lat, lon=excluded.lon,
                         place_city=excluded.place_city, place_country=excluded.place_country,
+                        vision_done=0,
                         seen=excluded.seen"#,
                 )?;
                 let mut touch = tx.prepare("UPDATE assets SET seen = ?2 WHERE path = ?1")?;
@@ -280,5 +283,93 @@ fn run(
             current_path: None,
         },
     );
+
+    // ---- Second pass: enrich images with Vision scene labels + OCR text.
+    if let Some(helper) = vision_helper.as_ref() {
+        if helper.exists() && !superseded(generation, my_gen) {
+            let _ = enrich_vision(app, &mut conn, generation, my_gen, helper);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Serialize)]
+struct VisionProgress {
+    processed: i64,
+    total: i64,
+    done: bool,
+}
+
+fn emit_vision(app: &AppHandle, processed: i64, total: i64, done: bool) {
+    let _ = app.emit(
+        "vision-progress",
+        VisionProgress {
+            processed,
+            total,
+            done,
+        },
+    );
+}
+
+/// Run the Vision helper over images lacking analysis, storing scene labels and
+/// OCR text. Batched so the model loads once per batch; cancels if superseded.
+fn enrich_vision(
+    app: &AppHandle,
+    conn: &mut rusqlite::Connection,
+    generation: &Arc<AtomicU64>,
+    my_gen: u64,
+    helper: &Path,
+) -> rusqlite::Result<()> {
+    let total: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM assets WHERE kind='image' AND vision_done=0",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if total == 0 {
+        return Ok(());
+    }
+    let mut processed = 0i64;
+    loop {
+        if superseded(generation, my_gen) {
+            return Ok(());
+        }
+        let batch: Vec<(i64, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, path FROM assets WHERE kind='image' AND vision_done=0 LIMIT 40",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+            rows.filter_map(Result::ok).collect()
+        };
+        if batch.is_empty() {
+            break;
+        }
+        let paths: Vec<String> = batch.iter().map(|(_, p)| p.clone()).collect();
+        let results = crate::vision::run_batch(helper, &paths);
+
+        let tx = conn.transaction()?;
+        {
+            let mut upd = tx.prepare("UPDATE assets SET ocr=?1, vision_done=1 WHERE id=?2")?;
+            let mut del = tx.prepare("DELETE FROM asset_labels WHERE asset_id=?1")?;
+            let mut ins =
+                tx.prepare("INSERT OR IGNORE INTO asset_labels(asset_id, label) VALUES(?1,?2)")?;
+            for (id, path) in &batch {
+                let data = results.get(path);
+                let text = data.map(|d| d.text.as_str()).unwrap_or("");
+                upd.execute(rusqlite::params![text, id])?;
+                del.execute([id])?;
+                if let Some(d) = data {
+                    for label in &d.labels {
+                        ins.execute(rusqlite::params![id, label])?;
+                    }
+                }
+            }
+        }
+        tx.commit()?;
+        processed += batch.len() as i64;
+        emit_vision(app, processed.min(total), total, false);
+    }
+    emit_vision(app, total, total, true);
     Ok(())
 }

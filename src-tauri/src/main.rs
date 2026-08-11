@@ -6,6 +6,7 @@ mod indexer;
 mod metadata;
 mod places;
 mod thumbs;
+mod vision;
 
 use chrono::{Duration, Local, NaiveDate, TimeZone};
 use rusqlite::Connection;
@@ -24,6 +25,7 @@ struct AppState {
     cache_dir: PathBuf,
     root: Mutex<Option<PathBuf>>,
     generation: Arc<AtomicU64>,
+    vision_helper: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -87,6 +89,7 @@ struct Filter {
     cameras: Option<Vec<String>>,
     formats: Option<Vec<String>>, // lowercase extensions
     orientation: Option<String>,  // portrait | landscape | square
+    scenes: Option<Vec<String>>,  // Vision scene/content labels
 }
 
 fn day_start_unix(s: &str) -> Option<i64> {
@@ -149,6 +152,17 @@ fn filter_conditions(f: &Option<Filter>) -> (Vec<String>, Vec<Bind>) {
         Some("square") => conds.push("(width > 0 AND height > 0 AND width = height)".into()),
         _ => {}
     }
+    if let Some(scenes) = &f.scenes {
+        if !scenes.is_empty() {
+            let ph = scenes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            conds.push(format!(
+                "id IN (SELECT asset_id FROM asset_labels WHERE label IN ({ph}))"
+            ));
+            for s in scenes {
+                binds.push(Box::new(s.clone()));
+            }
+        }
+    }
     (conds, binds)
 }
 
@@ -168,6 +182,7 @@ fn start_indexing(state: &AppState, app: &tauri::AppHandle, root: PathBuf) {
         root,
         state.generation.clone(),
         my_gen,
+        state.vision_helper.clone(),
     );
 }
 
@@ -507,8 +522,10 @@ fn search_assets(
 ) -> Result<Vec<Asset>, String> {
     let (mut conds, mut binds) = filter_conditions(&filter);
     let like = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
-    conds.insert(0, "name LIKE ? ESCAPE '\\'".into());
-    binds.insert(0, Box::new(like));
+    // Match the file name or any recognized text in the image (OCR).
+    conds.insert(0, "(name LIKE ? ESCAPE '\\' OR ocr LIKE ? ESCAPE '\\')".into());
+    binds.insert(0, Box::new(like.clone()));
+    binds.insert(1, Box::new(like));
     let sql = format!(
         "SELECT {ASSET_COLS} FROM assets{} ORDER BY capture_ts DESC LIMIT ?",
         where_clause(&conds)
@@ -528,6 +545,7 @@ struct FacetValue {
 struct Facets {
     cameras: Vec<FacetValue>,
     formats: Vec<FacetValue>,
+    scenes: Vec<FacetValue>,
 }
 
 fn query_facet(conn: &Connection, sql: &str) -> rusqlite::Result<Vec<FacetValue>> {
@@ -558,7 +576,17 @@ fn get_facets(state: State<AppState>) -> Result<Facets, String> {
          GROUP BY ext ORDER BY COUNT(*) DESC, ext ASC",
     )
     .map_err(e2s)?;
-    Ok(Facets { cameras, formats })
+    let scenes = query_facet(
+        &conn,
+        "SELECT label, COUNT(*) FROM asset_labels \
+         GROUP BY label ORDER BY COUNT(*) DESC, label ASC LIMIT 60",
+    )
+    .map_err(e2s)?;
+    Ok(Facets {
+        cameras,
+        formats,
+        scenes,
+    })
 }
 
 #[tauri::command]
@@ -876,12 +904,26 @@ fn main() {
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir());
 
+            // Locate the Vision helper: bundled resource (release) or the dev
+            // build output. Absent → scene/OCR enrichment is simply skipped.
+            let vision_helper = app
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|d| d.join("bin/vision-helper"))
+                .filter(|p| p.exists())
+                .or_else(|| {
+                    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bin/vision-helper");
+                    dev.exists().then_some(dev)
+                });
+
             app.manage(AppState {
                 db: Mutex::new(conn),
                 db_path,
                 cache_dir,
                 root: Mutex::new(saved_root.clone()),
                 generation: Arc::new(AtomicU64::new(0)),
+                vision_helper,
             });
 
             // Re-scan the previously opened folder on launch, if any.

@@ -26,6 +26,7 @@ export interface AssetFilter {
   cameras: string[];
   formats: string[]; // lowercase extensions
   orientation: Orientation | null;
+  scenes: string[]; // Vision scene/content labels
 }
 
 export const EMPTY_FILTER: AssetFilter = {
@@ -36,6 +37,7 @@ export const EMPTY_FILTER: AssetFilter = {
   cameras: [],
   formats: [],
   orientation: null,
+  scenes: [],
 };
 
 export interface FacetValue {
@@ -46,6 +48,7 @@ export interface FacetValue {
 export interface Facets {
   cameras: FacetValue[];
   formats: FacetValue[];
+  scenes: FacetValue[];
 }
 
 export type Lens = "date" | "places" | "people";
@@ -103,6 +106,12 @@ export interface IndexProgress {
   total: number | null;
   done: boolean;
   currentPath?: string;
+}
+
+export interface VisionProgress {
+  processed: number;
+  total: number;
+  done: boolean;
 }
 
 // Inclusive date range in local time. `null` means unbounded on that side.
