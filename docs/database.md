@@ -7,12 +7,12 @@ timeout so the background indexer and the UI can read/write concurrently.
 ## Location
 
 ```
-~/Library/Application Support/com.assetsviewer.app/
+~/Library/Application Support/com.trove.app/
 ├── index.sqlite            # the index (+ -wal / -shm while running)
 └── thumbnails/             # cached thumbnail / preview / face-crop JPEGs
 ```
 
-The directory is derived from the app's bundle identifier (`com.assetsviewer.app`). Deleting
+The directory is derived from the app's bundle identifier (`com.trove.app`). Deleting
 it is a full, safe reset — it never touches your actual media. Portable per-folder data lives
 elsewhere (inside the media folder); see [portable-data.md](portable-data.md).
 

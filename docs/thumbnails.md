@@ -35,7 +35,7 @@ flowchart LR
 
 ## The cache
 
-Cached files live in `~/Library/Application Support/com.assetsviewer.app/thumbnails/`.
+Cached files live in `~/Library/Application Support/com.trove.app/thumbnails/`.
 
 The cache key is **file path + modified time + size** (`thumb_file()`), so:
 

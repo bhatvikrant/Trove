@@ -1667,14 +1667,14 @@ mod tests {
             .unwrap_or(0)
     }
 
-    /// End-to-end backend check: walk a real folder (AV_TEST_DIR), index it the
+    /// End-to-end backend check: walk a real folder (TROVE_TEST_DIR), index it the
     /// same way the app does, and assert dates, aggregation and thumbnails.
     #[test]
     fn indexes_test_folder() {
-        let dir = match std::env::var("AV_TEST_DIR") {
+        let dir = match std::env::var("TROVE_TEST_DIR") {
             Ok(d) if std::path::Path::new(&d).is_dir() => d,
             _ => {
-                eprintln!("AV_TEST_DIR not set — skipping integration test");
+                eprintln!("TROVE_TEST_DIR not set — skipping integration test");
                 return;
             }
         };

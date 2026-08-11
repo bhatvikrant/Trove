@@ -28,7 +28,7 @@ Frontend-only scripts (rarely needed directly): `npm run dev` (Vite), `npm run b
 ```bash
 cd src-tauri
 cargo test                          # unit + integration tests (incl. the sidecar round-trip)
-AV_TEST_DIR=/path/to/media cargo test -- --nocapture   # exercise indexing against real files
+TROVE_TEST_DIR=/path/to/media cargo test -- --nocapture   # exercise indexing against real files
 ```
 
 Always run `cargo test` and `npx tsc --noEmit` before opening a PR.

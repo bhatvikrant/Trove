@@ -139,7 +139,7 @@ Deep dives on each subsystem live in [`docs/`](docs/):
 
 ## 🔐 Where your data lives
 
-- **Index + thumbnail cache** — `~/Library/Application Support/com.assetsviewer.app/`
+- **Index + thumbnail cache** — `~/Library/Application Support/com.trove.app/`
   (`index.sqlite` + `thumbnails/`). Deleting it is a safe reset; your media is untouched.
 - **Portable per-folder data** — a hidden `.trove/` folder *inside* your media folder
   (favorites, people names, analysis cache). Toggle it in Settings. See

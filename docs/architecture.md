@@ -112,7 +112,7 @@ All commands are registered in `main.rs`'s `invoke_handler!` and wrapped in `src
 
 ## Where things are stored
 
-- **Central index + thumbnail cache** — `~/Library/Application Support/com.assetsviewer.app/`
+- **Central index + thumbnail cache** — `~/Library/Application Support/com.trove.app/`
   (`index.sqlite` + `thumbnails/`). See [database.md](database.md).
 - **Portable per-folder data** — a hidden `.trove/` folder *inside* your media folder.
   See [portable-data.md](portable-data.md).
