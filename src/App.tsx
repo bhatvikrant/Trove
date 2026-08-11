@@ -603,6 +603,7 @@ export default function App() {
                   selected={selected}
                   onSelect={setSelected}
                   onVisibleAssetsChange={setVisibleAssets}
+                  onRename={handleRename}
                   focusPlace={focusPlace}
                   refreshToken={dataVersion}
                   hiddenIds={hiddenIds}
@@ -615,6 +616,7 @@ export default function App() {
                   onSelect={setSelected}
                   onVisibleAssetsChange={setVisibleAssets}
                   onRename={handleRenamePerson}
+                  onRenameAsset={handleRename}
                   focusPerson={focusPerson}
                   refreshToken={dataVersion}
                 />

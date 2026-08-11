@@ -20,6 +20,7 @@ interface Props {
   onSelect: (a: Asset) => void;
   onVisibleAssetsChange?: (assets: Asset[]) => void;
   onRename: (clusterId: number, name: string) => void;
+  onRenameAsset?: (asset: Asset, newName: string) => void;
   focusPerson?: { clusterId: number } | null;
   refreshToken?: number;
 }
@@ -31,6 +32,7 @@ export function PeopleTree({
   onSelect,
   onVisibleAssetsChange,
   onRename,
+  onRenameAsset,
   focusPerson,
   refreshToken,
 }: Props) {
@@ -38,6 +40,7 @@ export function PeopleTree({
   const [assetsByKey, setAssetsByKey] = useState<Map<number, Asset[]>>(new Map());
   const [loadingKeys, setLoadingKeys] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<{ id: number; value: string } | null>(null);
+  const [editingAsset, setEditingAsset] = useState<{ id: number; value: string } | null>(null);
   const skipBlur = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -252,9 +255,49 @@ export function PeopleTree({
                 >
                   <span className="tree-caret leaf">▶</span>
                   <AssetThumb asset={row.asset} />
-                  <span className="asset-name" title={row.asset.name}>
-                    {row.asset.name}
-                  </span>
+                  {editingAsset?.id === row.asset.id ? (
+                    <input
+                      className="rename-input"
+                      value={editingAsset.value}
+                      autoFocus
+                      onFocus={(e) => e.currentTarget.select()}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      onChange={(e) =>
+                        setEditingAsset({ id: row.asset.id, value: e.target.value })
+                      }
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Enter") {
+                          skipBlur.current = true;
+                          onRenameAsset?.(row.asset, editingAsset.value);
+                          setEditingAsset(null);
+                        } else if (e.key === "Escape") {
+                          skipBlur.current = true;
+                          setEditingAsset(null);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (skipBlur.current) {
+                          skipBlur.current = false;
+                          return;
+                        }
+                        onRenameAsset?.(row.asset, editingAsset.value);
+                        setEditingAsset(null);
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className="asset-name"
+                      title={row.asset.name}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setEditingAsset({ id: row.asset.id, value: row.asset.name });
+                      }}
+                    >
+                      {row.asset.name}
+                    </span>
+                  )}
                   {row.asset.favorite && <span className="fav-star">★</span>}
                 </div>
               )}
