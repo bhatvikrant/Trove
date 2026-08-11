@@ -588,9 +588,29 @@ button:disabled {
 .people-card {
   transition: border-color 0.12s, background 0.12s, transform 0.1s;
   cursor: grab;
+  touch-action: none;
 }
 .people-card:active {
   cursor: grabbing;
+}
+.people-card-input {
+  width: 100%;
+  text-align: center;
+  font-weight: 500;
+}
+.drag-ghost {
+  position: fixed;
+  z-index: 200;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0.9;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.4));
+}
+.drag-ghost .face-thumb {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  border: 2px solid var(--accent);
 }
 .people-card .face-thumb {
   width: 84px;

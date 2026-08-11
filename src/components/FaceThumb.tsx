@@ -39,7 +39,7 @@ export function FaceThumb({
 
   return (
     <span className="face-thumb">
-      {url ? <img src={url} loading="lazy" alt="" /> : "🙂"}
+      {url ? <img src={url} loading="lazy" alt="" draggable={false} /> : "🙂"}
     </span>
   );
 }

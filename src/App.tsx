@@ -538,6 +538,7 @@ export default function App() {
                     people={people}
                     onFocusPerson={setFocusPerson}
                     onMerge={handleMergePeople}
+                    onRename={handleRenamePerson}
                   />
                 ) : undefined
               }
