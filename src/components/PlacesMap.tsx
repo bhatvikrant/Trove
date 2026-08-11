@@ -1,22 +1,18 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Places } from "../types";
-
-// Rough continent blobs in lon/lat space (x = lon+180, y = 90-lat) — a
-// self-contained, offline map backdrop. Pins are placed by true projection.
-const CONTINENTS: [number, number, number, number][] = [
-  [80, 45, 30, 24], // North America
-  [120, 108, 15, 28], // South America
-  [196, 40, 18, 13], // Europe
-  [202, 92, 22, 30], // Africa
-  [272, 46, 44, 28], // Asia
-  [316, 118, 17, 11], // Australia
-];
+import { WORLD_LAND } from "../worldLand";
 
 interface Pin {
   country: string;
   city: string;
   count: number;
-  x: number;
+  x: number; // lon + 180  (0..360)
+  y: number; // 90 - lat   (0..180)
+}
+
+interface Hover {
+  label: string;
+  x: number; // px within the stage
   y: number;
 }
 
@@ -27,6 +23,9 @@ export function PlacesMap({
   places: Places | null;
   onFocusPlace: (p: { country: string; city: string }) => void;
 }) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<Hover | null>(null);
+
   const pins = useMemo<Pin[]>(() => {
     if (!places) return [];
     const out: Pin[] = [];
@@ -46,6 +45,16 @@ export function PlacesMap({
 
   const located = places ? places.total - places.noLocation : 0;
 
+  const showHover = (pin: Pin, e: React.MouseEvent) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setHover({
+      label: `${pin.city}, ${pin.country} · ${pin.count.toLocaleString()}`,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
   return (
     <div className="places-map">
       <div className="places-map-head">
@@ -62,9 +71,10 @@ export function PlacesMap({
           <p>No location data in these assets.</p>
         </div>
       ) : (
-        <div className="places-map-stage">
+        <div className="places-map-stage" ref={stageRef}>
           <svg viewBox="0 0 360 180" className="world-svg" preserveAspectRatio="xMidYMid meet">
             <rect x="0" y="0" width="360" height="180" className="world-ocean" />
+            <path d={WORLD_LAND} className="world-land-path" />
             <g className="world-grat">
               {[30, 60, 90, 120, 150].map((y) => (
                 <line key={`h${y}`} x1="0" y1={y} x2="360" y2={y} />
@@ -73,14 +83,9 @@ export function PlacesMap({
                 <line key={`v${x}`} x1={x} y1="0" x2={x} y2="180" />
               ))}
             </g>
-            <g className="world-land">
-              {CONTINENTS.map(([cx, cy, rx, ry], i) => (
-                <ellipse key={i} cx={cx} cy={cy} rx={rx} ry={ry} />
-              ))}
-            </g>
             <g>
               {pins.map((p) => {
-                const r = Math.min(1.6 + Math.sqrt(p.count) * 0.7, 6);
+                const r = Math.min(1.8 + Math.sqrt(p.count) * 0.7, 6);
                 return (
                   <circle
                     key={`${p.country}:${p.city}`}
@@ -88,16 +93,23 @@ export function PlacesMap({
                     cx={p.x}
                     cy={p.y}
                     r={r}
+                    onMouseEnter={(e) => showHover(p, e)}
+                    onMouseMove={(e) => showHover(p, e)}
+                    onMouseLeave={() => setHover(null)}
                     onClick={() => onFocusPlace({ country: p.country, city: p.city })}
-                  >
-                    <title>
-                      {p.city}, {p.country} — {p.count.toLocaleString()}
-                    </title>
-                  </circle>
+                  />
                 );
               })}
             </g>
           </svg>
+          {hover && (
+            <div
+              className="map-tip"
+              style={{ left: hover.x, top: hover.y - 12 }}
+            >
+              {hover.label}
+            </div>
+          )}
         </div>
       )}
     </div>
