@@ -162,6 +162,12 @@ button:disabled {
   color: var(--accent);
   background: var(--accent-soft);
 }
+/* Dropdown affordance on the Filters / time chips. */
+.chip-caret {
+  margin-left: 1px;
+  opacity: 0.7;
+  flex: 0 0 auto;
+}
 .date-popover {
   position: absolute;
   top: calc(100% + 8px);

@@ -145,7 +145,9 @@ export function CalendarPicker({ range, onChange }: Props) {
       >
         <span>🗓️</span>
         <span>{label}</span>
-        <span style={{ opacity: 0.5, fontSize: 10 }}>▾</span>
+        <svg className="chip-caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
       </button>
 
       {open && (
