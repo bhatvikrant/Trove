@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   countSlideshowAssets,
   deleteSlideshowPreset,
@@ -16,6 +16,7 @@ import {
   type SpecialDate,
 } from "../types";
 import { showToast } from "../toast";
+import { MonthDayPicker } from "./MonthDayPicker";
 
 const KINDS: { id: Kind; label: string }[] = [
   { id: "image", label: "Photos" },
@@ -81,7 +82,7 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
   const [presets, setPresets] = useState<SlideshowPreset[]>([]);
   const [count, setCount] = useState<number | null>(null);
   const [counting, setCounting] = useState(false);
-  const [dateInput, setDateInput] = useState("");
+  const [pendingDate, setPendingDate] = useState<{ month: number; day: number } | null>(null);
 
   const set = useCallback(
     (patch: Partial<SlideshowConfig>) => setConfig((c) => ({ ...c, ...patch })),
@@ -112,14 +113,13 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
   }, [config]);
 
   const addDate = () => {
-    if (!dateInput) return;
-    const [, m, d] = dateInput.split("-").map(Number);
-    if (!m || !d) return;
+    if (!pendingDate) return;
+    const { month: m, day: d } = pendingDate;
     const exists = config.specialDates.some((x) => x.month === m && x.day === d);
     if (!exists) {
       set({ specialDates: [...config.specialDates, { month: m, day: d }] });
     }
-    setDateInput("");
+    setPendingDate(null);
   };
 
   const removeDate = (sd: SpecialDate) =>
@@ -160,7 +160,6 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
   };
 
   const canStart = (count ?? 0) > 0;
-  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const countLabel = useMemo(() => {
     if (counting && count === null) return "Counting…";
@@ -215,15 +214,11 @@ export function SlideshowSetup({ onClose, onStart, initial }: Props) {
           <section className="ss-sec">
             <h4>Special dates</h4>
             <div className="ss-date-add">
-              <input
-                ref={dateInputRef}
-                type="date"
-                className="sidebar-search ss-date-input"
-                value={dateInput}
-                onChange={(e) => setDateInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addDate()}
+              <MonthDayPicker
+                value={pendingDate}
+                onChange={(m, d) => setPendingDate({ month: m, day: d })}
               />
-              <button className="btn" onClick={addDate} disabled={!dateInput}>
+              <button className="btn" onClick={addDate} disabled={!pendingDate}>
                 Add
               </button>
             </div>

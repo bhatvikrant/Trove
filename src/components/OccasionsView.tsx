@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { SavedSpecialDate } from "../types";
+import { MonthDayPicker } from "./MonthDayPicker";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -16,15 +17,13 @@ interface Props {
 /** The Occasions tab's main content: add occasions and play a slideshow for
  *  each one (its photos from that day across every year). */
 export function OccasionsView({ occasions, onAdd, onDelete, onPlay }: Props) {
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState<{ month: number; day: number } | null>(null);
   const [label, setLabel] = useState("");
 
   const add = () => {
     if (!date) return;
-    const [, m, d] = date.split("-").map(Number);
-    if (!m || !d) return;
-    onAdd(m, d, label.trim() || null);
-    setDate("");
+    onAdd(date.month, date.day, label.trim() || null);
+    setDate(null);
     setLabel("");
   };
 
@@ -39,14 +38,7 @@ export function OccasionsView({ occasions, onAdd, onDelete, onPlay }: Props) {
       </header>
 
       <div className="occ-add">
-        <input
-          type="date"
-          className="sidebar-search occ-date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          aria-label="Occasion date"
-        />
+        <MonthDayPicker value={date} onChange={(m, d) => setDate({ month: m, day: d })} />
         <input
           type="text"
           className="sidebar-search occ-label"

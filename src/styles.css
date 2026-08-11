@@ -2381,3 +2381,26 @@ body.dragging-face * {
   color: #e5484d;
   background: var(--hover);
 }
+
+/* ---------- Month/day picker ---------- */
+.mdp {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.mdp-trigger {
+  cursor: pointer;
+}
+.mdp-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  padding: 8px 12px 10px;
+}
+/* Keep sibling fields aligned to the top when the calendar expands. */
+.occ-add,
+.ss-date-add {
+  align-items: flex-start;
+}
