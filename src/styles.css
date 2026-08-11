@@ -1074,6 +1074,83 @@ body.dragging-face * {
   box-shadow: var(--shadow);
   background: #000;
 }
+
+/* ---------- Zoomable image ---------- */
+.zoom-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: default;
+  touch-action: none; /* let us handle wheel/drag ourselves */
+}
+.zoom-wrap.zoomed {
+  cursor: grab;
+}
+.zoom-wrap.zoomed:active {
+  cursor: grabbing;
+}
+.zoom-wrap img {
+  will-change: transform;
+}
+.zoom-controls {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.preview-stage:hover .zoom-controls,
+.zoom-wrap.zoomed .zoom-controls,
+.zoom-controls:focus-within {
+  opacity: 0.96;
+}
+.zoom-btn,
+.zoom-level {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  line-height: 1;
+  padding: 4px 8px;
+}
+.zoom-btn {
+  font-size: 16px;
+  min-width: 26px;
+}
+.zoom-level {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  color: var(--text-dim);
+}
+.zoom-btn:hover:not(:disabled),
+.zoom-level:hover:not(:disabled) {
+  background: var(--hover);
+}
+.zoom-btn:disabled,
+.zoom-level:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.zoom-btn:focus-visible,
+.zoom-level:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .preview-stage .pdf-frame {
   width: 100%;
   height: 100%;

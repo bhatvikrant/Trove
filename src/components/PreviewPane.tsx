@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { assetUrl, getPreview, revealInFinder } from "../api";
 import type { Asset } from "../types";
 import { showToast } from "../toast";
+import { ZoomableImage } from "./ZoomableImage";
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -207,7 +208,7 @@ export function PreviewPane({
         <div className="stage-inner" key={asset.id}>
           {asset.kind === "image" &&
             (imgUrl ? (
-              <img src={imgUrl} alt={asset.name} decoding="async" />
+              <ZoomableImage src={imgUrl} alt={asset.name} />
             ) : (
               <span className="spinner stage-spinner" />
             ))}
