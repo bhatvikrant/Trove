@@ -154,11 +154,11 @@ export function PreviewPane({
         {emptyOverride ?? (
           <div className="empty">
             <div className="glyph">👁️</div>
-            <h2>Nothing selected</h2>
+            <h2>Select an asset to preview</h2>
             <p>
               {total > 0
                 ? `Pick an asset from the tree on the left to preview it here. ${total.toLocaleString()} assets in view.`
-                : "Select an asset from the tree to preview it."}
+                : "Choose an asset from the tree on the left."}
             </p>
           </div>
         )}
