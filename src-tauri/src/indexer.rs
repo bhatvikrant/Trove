@@ -259,6 +259,14 @@ fn run(
         rusqlite::params![my_gen as i64],
     )?;
 
+    // ---- Restore favorites from the durable, path-keyed table (fresh rows
+    // default to favorite=0, so re-index would otherwise lose them).
+    conn.execute(
+        "UPDATE assets SET favorite = 1
+         WHERE path IN (SELECT path FROM favorites)",
+        [],
+    )?;
+
     // Record the final asset count for this folder's recents entry.
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM assets", [], |r| r.get(0))
@@ -476,6 +484,55 @@ fn cluster_faces(conn: &mut rusqlite::Connection) -> rusqlite::Result<()> {
         }
     }
     tx.commit()?;
+
+    // Reattach names the user gave before this re-index (see reattach_names).
+    reattach_names(conn)?;
+    Ok(())
+}
+
+/// Reapply user-assigned person names after (re)clustering. Names are stored
+/// durably in `named_faces`, keyed by file path + face centre, so a folder that
+/// gets re-indexed (fresh cluster ids) gets its labels back: for each cluster,
+/// take the most common stored name across its faces. Also prunes `people` rows
+/// whose clusters no longer exist.
+fn reattach_names(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    use rusqlite::OptionalExtension;
+    let clusters: Vec<i64> = {
+        let mut stmt =
+            conn.prepare("SELECT DISTINCT cluster_id FROM faces WHERE cluster_id IS NOT NULL")?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        rows.filter_map(Result::ok).collect()
+    };
+    for cid in clusters {
+        let name: Option<String> = conn
+            .query_row(
+                "SELECT nf.name FROM faces f
+                 JOIN assets a ON a.id = f.asset_id
+                 JOIN named_faces nf
+                   ON nf.path = a.path
+                  AND ROUND(f.x + f.w/2.0, 3) = nf.cx
+                  AND ROUND(f.y + f.h/2.0, 3) = nf.cy
+                 WHERE f.cluster_id = ?1
+                 GROUP BY nf.name
+                 ORDER BY COUNT(*) DESC
+                 LIMIT 1",
+                [cid],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(n) = name {
+            conn.execute(
+                "INSERT INTO people(cluster_id, name) VALUES(?1, ?2)
+                 ON CONFLICT(cluster_id) DO UPDATE SET name = excluded.name",
+                rusqlite::params![cid, n],
+            )?;
+        }
+    }
+    conn.execute(
+        "DELETE FROM people WHERE cluster_id NOT IN
+            (SELECT DISTINCT cluster_id FROM faces WHERE cluster_id IS NOT NULL)",
+        [],
+    )?;
     Ok(())
 }
 

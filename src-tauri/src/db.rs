@@ -83,7 +83,22 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
          CREATE TABLE IF NOT EXISTS people (
             cluster_id INTEGER PRIMARY KEY,
             name       TEXT
-         );",
+         );
+
+         -- Durable, folder-independent state keyed by stable identifiers so it
+         -- survives re-indexing / switching folders (unlike assets/faces/people,
+         -- which are rebuilt per folder).
+         CREATE TABLE IF NOT EXISTS favorites (
+            path TEXT PRIMARY KEY
+         );
+         CREATE TABLE IF NOT EXISTS named_faces (
+            path TEXT NOT NULL,
+            cx   REAL NOT NULL,   -- face centre x (top-left origin, rounded)
+            cy   REAL NOT NULL,   -- face centre y
+            name TEXT NOT NULL,
+            PRIMARY KEY (path, cx, cy)
+         );
+         CREATE INDEX IF NOT EXISTS idx_named_faces_path ON named_faces(path);",
     )?;
     Ok(conn)
 }

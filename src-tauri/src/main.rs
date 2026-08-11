@@ -213,7 +213,16 @@ fn set_root(
     let now = now_unix();
     {
         let conn = state.db.lock().unwrap();
-        conn.execute("DELETE FROM assets", []).map_err(e2s)?;
+        // The per-folder index is rebuilt from scratch. Favorites and face
+        // names live in the durable `favorites` / `named_faces` tables (keyed
+        // by path), so they survive this and get reattached on re-index.
+        conn.execute_batch(
+            "DELETE FROM assets;
+             DELETE FROM faces;
+             DELETE FROM asset_labels;
+             DELETE FROM people;",
+        )
+        .map_err(e2s)?;
         conn.execute(
             "INSERT INTO meta(k,v) VALUES('root',?1)
              ON CONFLICT(k) DO UPDATE SET v=excluded.v",
@@ -591,15 +600,27 @@ fn get_facets(state: State<AppState>) -> Result<Facets, String> {
 
 #[tauri::command]
 fn set_favorite(id: i64, favorite: bool, state: State<AppState>) -> Result<(), String> {
-    state
-        .db
-        .lock()
-        .unwrap()
-        .execute(
-            "UPDATE assets SET favorite = ?1 WHERE id = ?2",
-            rusqlite::params![favorite as i64, id],
+    let conn = state.db.lock().unwrap();
+    conn.execute(
+        "UPDATE assets SET favorite = ?1 WHERE id = ?2",
+        rusqlite::params![favorite as i64, id],
+    )
+    .map_err(e2s)?;
+    // Mirror into the durable, path-keyed favorites table so the choice
+    // survives re-indexing / switching folders.
+    if favorite {
+        conn.execute(
+            "INSERT OR IGNORE INTO favorites(path) SELECT path FROM assets WHERE id=?1",
+            [id],
         )
         .map_err(e2s)?;
+    } else {
+        conn.execute(
+            "DELETE FROM favorites WHERE path = (SELECT path FROM assets WHERE id=?1)",
+            [id],
+        )
+        .map_err(e2s)?;
+    }
     Ok(())
 }
 
@@ -840,6 +861,39 @@ fn list_person_assets(
     run_asset_query(&conn, &sql, &binds)
 }
 
+/// Persist a cluster's current name into the durable, path-keyed `named_faces`
+/// table so it can be reattached after the folder is re-indexed (which assigns
+/// fresh cluster ids). Keyed by file path + face centre. A cleared name removes
+/// the durable entries for that cluster's faces.
+fn record_cluster_label(conn: &rusqlite::Connection, cluster_id: i64) -> rusqlite::Result<()> {
+    let name: Option<String> = conn
+        .query_row(
+            "SELECT name FROM people WHERE cluster_id=?1",
+            [cluster_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(None);
+    // Drop any prior labels for this cluster's faces first.
+    conn.execute(
+        "DELETE FROM named_faces WHERE (path, cx, cy) IN (
+            SELECT a.path, ROUND(f.x + f.w/2.0, 3), ROUND(f.y + f.h/2.0, 3)
+            FROM faces f JOIN assets a ON a.id = f.asset_id
+            WHERE f.cluster_id = ?1
+         )",
+        [cluster_id],
+    )?;
+    if let Some(n) = name {
+        conn.execute(
+            "INSERT OR REPLACE INTO named_faces(path, cx, cy, name)
+             SELECT a.path, ROUND(f.x + f.w/2.0, 3), ROUND(f.y + f.h/2.0, 3), ?2
+             FROM faces f JOIN assets a ON a.id = f.asset_id
+             WHERE f.cluster_id = ?1",
+            rusqlite::params![cluster_id, n],
+        )?;
+    }
+    Ok(())
+}
+
 /// Merge one person cluster into another (user confirms they're the same
 /// person). Faces move to `target`; `source` is removed. Keeps `target`'s name,
 /// falling back to `source`'s if target has none.
@@ -876,6 +930,8 @@ fn merge_people(source: i64, target: i64, state: State<AppState>) -> Result<(), 
     .map_err(e2s)?;
     conn.execute("DELETE FROM people WHERE cluster_id=?1", [source])
         .map_err(e2s)?;
+    // The source's durable labels (path-keyed) now belong to the target.
+    record_cluster_label(&conn, target).map_err(e2s)?;
     Ok(())
 }
 
@@ -883,16 +939,15 @@ fn merge_people(source: i64, target: i64, state: State<AppState>) -> Result<(), 
 fn rename_person(cluster_id: i64, name: String, state: State<AppState>) -> Result<(), String> {
     let name = name.trim();
     let value: Option<&str> = if name.is_empty() { None } else { Some(name) };
-    state
-        .db
-        .lock()
-        .unwrap()
-        .execute(
-            "INSERT INTO people(cluster_id, name) VALUES(?1, ?2)
-             ON CONFLICT(cluster_id) DO UPDATE SET name = excluded.name",
-            rusqlite::params![cluster_id, value],
-        )
-        .map_err(e2s)?;
+    let conn = state.db.lock().unwrap();
+    conn.execute(
+        "INSERT INTO people(cluster_id, name) VALUES(?1, ?2)
+         ON CONFLICT(cluster_id) DO UPDATE SET name = excluded.name",
+        rusqlite::params![cluster_id, value],
+    )
+    .map_err(e2s)?;
+    // Persist by face position so the name survives re-indexing.
+    record_cluster_label(&conn, cluster_id).map_err(e2s)?;
     Ok(())
 }
 
