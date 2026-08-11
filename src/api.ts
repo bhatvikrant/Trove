@@ -88,6 +88,11 @@ export async function renameAsset(path: string, name: string): Promise<Asset> {
   return invoke("rename_asset", { path, name });
 }
 
+/** Move an asset to the system Trash (reversible) and drop it from the index. */
+export async function deleteAsset(path: string): Promise<void> {
+  await invoke("delete_asset", { path });
+}
+
 /** Reveal a file in Finder. */
 export async function revealInFinder(path: string): Promise<void> {
   await invoke("reveal_in_finder", { path });

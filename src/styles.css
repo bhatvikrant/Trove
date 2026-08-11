@@ -129,6 +129,13 @@ button:disabled {
 .btn.primary:hover {
   opacity: 0.9;
 }
+.btn.danger {
+  color: #e5484d;
+}
+.btn.danger:hover {
+  background: rgba(229, 72, 77, 0.12);
+  border-color: #e5484d;
+}
 .btn.icon {
   padding: 6px 8px;
 }

@@ -453,6 +453,16 @@ fn rename_asset(path: String, name: String, state: State<AppState>) -> Result<As
     .map_err(e2s)
 }
 
+/// Move an asset to the system Trash (reversible) and drop it from the index.
+#[tauri::command]
+fn delete_asset(path: String, state: State<AppState>) -> Result<(), String> {
+    trash::delete(&path).map_err(|e| e.to_string())?;
+    let conn = state.db.lock().unwrap();
+    conn.execute("DELETE FROM assets WHERE path=?1", [&path])
+        .map_err(e2s)?;
+    Ok(())
+}
+
 #[tauri::command]
 fn reveal_in_finder(path: String) -> Result<(), String> {
     Command::new("open")
@@ -512,6 +522,7 @@ fn main() {
             get_thumb,
             get_preview,
             rename_asset,
+            delete_asset,
             reveal_in_finder,
         ])
         .run(tauri::generate_context!())

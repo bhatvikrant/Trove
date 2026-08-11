@@ -64,6 +64,7 @@ interface Props {
   prevAsset: Asset | null;
   nextAsset: Asset | null;
   onRename: (asset: Asset, newName: string) => void;
+  onDelete: (asset: Asset) => void;
 }
 
 export function PreviewPane({
@@ -74,6 +75,7 @@ export function PreviewPane({
   prevAsset,
   nextAsset,
   onRename,
+  onDelete,
 }: Props) {
   const canCycle = !!position && position.total > 1;
 
@@ -261,6 +263,9 @@ export function PreviewPane({
         )}
         <button className="btn" onClick={() => revealInFinder(asset.path)}>
           Reveal in Finder
+        </button>
+        <button className="btn danger" onClick={() => onDelete(asset)}>
+          Delete
         </button>
       </div>
     </div>

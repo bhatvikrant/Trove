@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navbar } from "./components/Navbar";
 import { DateTree } from "./components/DateTree";
 import { PreviewPane } from "./components/PreviewPane";
-import { message } from "@tauri-apps/plugin-dialog";
+import { confirm, message } from "@tauri-apps/plugin-dialog";
 import {
+  deleteAsset,
   getDateTree,
   onIndexProgress,
   pickFolder,
@@ -95,6 +96,31 @@ export default function App() {
       setLoadingTree(false);
     }
   }, []);
+
+  const handleDelete = useCallback(
+    async (asset: Asset) => {
+      const ok = await confirm(`“${asset.name}” will be moved to the Trash.`, {
+        title: "Delete asset",
+        kind: "warning",
+        okLabel: "Move to Trash",
+        cancelLabel: "Cancel",
+      });
+      if (!ok) return;
+      // Pick a neighbour to select next, before the row disappears.
+      const idx = visibleAssets.findIndex((a) => a.id === asset.id);
+      const nextSel =
+        visibleAssets[idx + 1] ?? visibleAssets[idx - 1] ?? null;
+      try {
+        await deleteAsset(asset.path);
+        setSelected(nextSel && nextSel.id !== asset.id ? nextSel : null);
+        setDataVersion((v) => v + 1);
+        refreshTree();
+      } catch (e) {
+        await message(String(e), { title: "Couldn’t delete", kind: "error" });
+      }
+    },
+    [visibleAssets, refreshTree]
+  );
 
   // Subscribe to indexing progress; refresh the tree as items stream in.
   useEffect(() => {
@@ -215,6 +241,7 @@ export default function App() {
               prevAsset={neighbors.prev}
               nextAsset={neighbors.next}
               onRename={handleRename}
+              onDelete={handleDelete}
             />
           </>
         ) : (
