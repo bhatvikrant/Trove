@@ -202,6 +202,16 @@ export default function App() {
     await rescan();
   }, [root]);
 
+  // Return to the welcome screen (keeps the folder indexed for a quick reopen).
+  const handleHome = useCallback(() => {
+    setRootPath(null);
+    setSelected(null);
+    setTree(null);
+    setProgress(null);
+    setVisibleAssets([]);
+    setRange(EMPTY_RANGE);
+  }, []);
+
   const indexing = !!progress && !progress.done;
 
   const onResize = useCallback((e: React.MouseEvent) => {
@@ -242,6 +252,7 @@ export default function App() {
         onRange={setRange}
         onPickFolder={handlePickFolder}
         onRescan={handleRescan}
+        onHome={handleHome}
         canRescan={!!root && !indexing}
       />
 
