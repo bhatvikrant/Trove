@@ -14,12 +14,15 @@ import { PeopleTree } from "./components/PeopleTree";
 import { PeopleGrid } from "./components/PeopleGrid";
 import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
+import { SlideshowSetup } from "./components/SlideshowSetup";
+import { SlideshowPlayer } from "./components/SlideshowPlayer";
 import { showToast, dismissToast, Toaster } from "./toast";
 import {
   deleteAsset,
   getDateTree,
   getPeople,
   getPlaces,
+  listSlideshowAssets,
   mergePeople,
   onIndexProgress,
   onMenuOpenFolder,
@@ -41,6 +44,8 @@ import {
   type Lens,
   type Person,
   type Places,
+  type SlideshowConfig,
+  type SlideshowItem,
   type VisionProgress,
 } from "./types";
 
@@ -66,6 +71,12 @@ export default function App() {
   // True while a folder is being dragged over the window.
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Slideshow: the setup modal, then the resolved items being played.
+  const [slideshowSetup, setSlideshowSetup] = useState(false);
+  const [slideshow, setSlideshow] = useState<{
+    items: SlideshowItem[];
+    config: SlideshowConfig;
+  } | null>(null);
   // True in native macOS fullscreen, where the traffic lights are hidden and the
   // navbar can reclaim the left inset that normally clears them.
   const [fullscreen, setFullscreen] = useState(false);
@@ -410,6 +421,21 @@ export default function App() {
     await rescan();
   }, [root]);
 
+  // Resolve a slideshow config to its items and launch the player.
+  const handleStartSlideshow = useCallback(async (config: SlideshowConfig) => {
+    try {
+      const items = await listSlideshowAssets(config);
+      if (items.length === 0) {
+        showToast("No media matches this slideshow");
+        return;
+      }
+      setSlideshowSetup(false);
+      setSlideshow({ items, config });
+    } catch (e) {
+      await message(String(e), { title: "Couldn’t start slideshow", kind: "error" });
+    }
+  }, []);
+
   // Switching lens (Date / Places / People) clears the current preview, since
   // the selected asset may not exist in the new view.
   const handleLens = useCallback(
@@ -478,6 +504,7 @@ export default function App() {
         onRescan={handleRescan}
         onHome={handleHome}
         onSettings={() => setSettingsOpen(true)}
+        onSlideshow={() => setSlideshowSetup(true)}
         canRescan={!!root && !indexing}
       />
 
@@ -579,6 +606,21 @@ export default function App() {
       )}
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {slideshowSetup && (
+        <SlideshowSetup
+          onClose={() => setSlideshowSetup(false)}
+          onStart={handleStartSlideshow}
+        />
+      )}
+
+      {slideshow && (
+        <SlideshowPlayer
+          items={slideshow.items}
+          config={slideshow.config}
+          onClose={() => setSlideshow(null)}
+        />
+      )}
 
       <Toaster />
     </div>

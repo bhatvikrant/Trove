@@ -10,6 +10,7 @@ interface Props {
   onRescan: () => void;
   onHome: () => void;
   onSettings: () => void;
+  onSlideshow: () => void;
   canRescan: boolean;
 }
 
@@ -21,6 +22,7 @@ export function Navbar({
   onRescan,
   onHome,
   onSettings,
+  onSlideshow,
   canRescan,
 }: Props) {
   return (
@@ -69,6 +71,12 @@ export function Navbar({
 
       {root && (
         <>
+          <button className="btn" onClick={onSlideshow} title="Play a slideshow">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z" />
+            </svg>
+            Slideshow
+          </button>
           <FiltersMenu filter={filter} onChange={onFilter} />
           <CalendarPicker
             range={{ start: filter.start, end: filter.end }}

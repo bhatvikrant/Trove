@@ -1881,3 +1881,301 @@ body.dragging-face * {
     animation: spin 0.7s linear infinite !important;
   }
 }
+
+/* ---------- Slideshow player ---------- */
+.slideshow {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+  overflow: hidden;
+}
+.slideshow.hide-cursor {
+  cursor: none;
+}
+.ss-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.ss-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ss-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.ss-pdf {
+  width: 88%;
+  height: 92%;
+  border: none;
+  border-radius: 6px;
+  background: #fff;
+}
+.ss-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: #fff;
+}
+.ss-audio-glyph {
+  font-size: 72px;
+}
+.ss-audio-name {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Ken Burns — a slow pan/zoom on photos; 4 variants for variety. */
+.ss-media.kb {
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+  transform-origin: center;
+  will-change: transform;
+}
+.ss-media.kb0 { animation-name: kb0; }
+.ss-media.kb1 { animation-name: kb1; }
+.ss-media.kb2 { animation-name: kb2; }
+.ss-media.kb3 { animation-name: kb3; }
+@keyframes kb0 { from { transform: scale(1.02) translate(0, 0); } to { transform: scale(1.14) translate(-2%, -2%); } }
+@keyframes kb1 { from { transform: scale(1.14) translate(2%, 1%); } to { transform: scale(1.02) translate(0, 0); } }
+@keyframes kb2 { from { transform: scale(1.03) translate(2%, -1%); } to { transform: scale(1.15) translate(-1%, 2%); } }
+@keyframes kb3 { from { transform: scale(1.12) translate(-2%, 2%); } to { transform: scale(1.02) translate(1%, -1%); } }
+
+.ss-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 48px 34px 30px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.62), transparent);
+  color: #fff;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.ss-caption.dim {
+  opacity: 0;
+}
+.ss-cap-date {
+  font-size: 20px;
+  font-weight: 600;
+}
+.ss-cap-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ss-exit {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  z-index: 6;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.25s, background 0.12s;
+}
+.ss-exit:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.slideshow.hide-cursor .ss-exit {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ss-controls {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(22, 22, 24, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 13px;
+  color: #fff;
+  transition: opacity 0.25s;
+}
+.ss-controls.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.ss-ctl {
+  border: none;
+  background: transparent;
+  color: #fff;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ss-ctl:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.ss-ctl.play {
+  font-size: 13px;
+}
+.ss-count {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+  font-variant-numeric: tabular-nums;
+  min-width: 62px;
+  text-align: center;
+}
+.ss-progress {
+  width: 150px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ss-progress-bar {
+  height: 100%;
+  background: #fff;
+  transition: width 0.3s ease;
+}
+
+/* ---------- Slideshow setup modal ---------- */
+.ss-setup {
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
+.ss-setup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+.ss-sec h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.ss-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin: 6px 0 0;
+}
+.ss-date-add {
+  display: flex;
+  gap: 8px;
+}
+.ss-date-input {
+  max-width: 190px;
+  flex: 0 0 auto;
+}
+.ss-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ss-window {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.ss-window input {
+  width: 64px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 12.5px;
+}
+.ss-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ss-person {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.ss-person.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ss-person-face {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.ss-person-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ss-toggles {
+  margin-top: 10px;
+}
+.ss-preset-load {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.ss-setup-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.ss-setup-foot .grow {
+  flex: 1;
+}
+.ss-count-label {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
