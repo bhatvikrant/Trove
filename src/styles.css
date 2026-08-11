@@ -59,6 +59,9 @@ button {
   font-family: inherit;
   cursor: pointer;
 }
+button:disabled {
+  cursor: default;
+}
 
 /* ---------- App shell ---------- */
 .app {
@@ -296,6 +299,7 @@ button {
   border-radius: 6px;
   white-space: nowrap;
   overflow: hidden;
+  cursor: pointer;
 }
 .tree-row:hover {
   background: var(--hover);
