@@ -3,7 +3,9 @@ import { getSettings, setVisionQuality } from "../api";
 import type { VisionQuality } from "../types";
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
-  const [quality, setQuality] = useState<VisionQuality>("accurate");
+  // `null` until the saved setting loads, so we don't flash the first option
+  // as selected and then jump to the real one.
+  const [quality, setQuality] = useState<VisionQuality | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
