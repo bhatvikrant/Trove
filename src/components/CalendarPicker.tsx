@@ -142,6 +142,8 @@ export function CalendarPicker({ range, onChange }: Props) {
       <button
         className={`date-chip ${active ? "active" : ""}`}
         onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <span>🗓️</span>
         <span>{label}</span>
@@ -151,7 +153,7 @@ export function CalendarPicker({ range, onChange }: Props) {
       </button>
 
       {open && (
-        <div className="date-popover">
+        <div className="date-popover" role="dialog" aria-label="Choose date range">
           <div className="date-presets">
             {presets.map((p) => {
               const isActive = rangesEqual(p.get(), range);

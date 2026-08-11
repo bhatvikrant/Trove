@@ -73,6 +73,8 @@ export function FiltersMenu({
       <button
         className={`date-chip ${n ? "active" : ""}`}
         onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
@@ -85,7 +87,8 @@ export function FiltersMenu({
       </button>
 
       {open && (
-        <div className="date-popover filters-pop">
+        <div className="date-popover filters-pop" role="dialog" aria-label="Filters">
+
           <section className="fsec">
             <h4>Media type</h4>
             <div className="chk-row">

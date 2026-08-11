@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSettings, setVisionQuality } from "../api";
 import type { VisionQuality } from "../types";
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [quality, setQuality] = useState<VisionQuality>("accurate");
+  const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getSettings()
@@ -11,10 +12,40 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       .catch(() => {});
   }, []);
 
+  // Move focus into the dialog on open and restore it to the trigger on close.
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onEsc);
-    return () => document.removeEventListener("keydown", onEsc);
+    const prevFocused = document.activeElement as HTMLElement | null;
+    modalRef.current
+      ?.querySelector<HTMLElement>('input, button, [tabindex]')
+      ?.focus();
+    return () => prevFocused?.focus?.();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Trap Tab within the dialog.
+      if (e.key !== "Tab" || !modalRef.current) return;
+      const focusables = modalRef.current.querySelectorAll<HTMLElement>(
+        'input, button, [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   const choose = (q: VisionQuality) => {
@@ -38,9 +69,16 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-head">
-          <h2>Settings</h2>
+          <h2 id="settings-title">Settings</h2>
           <button className="btn icon" onClick={onClose} aria-label="Close">
             ✕
           </button>
