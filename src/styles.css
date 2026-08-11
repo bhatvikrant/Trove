@@ -430,14 +430,14 @@ button:disabled {
 .lens-tab {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 9px;
+  padding: 6px 8px;
   border: none;
   background: transparent;
   color: var(--text-dim);
-  border-radius: 7px;
+  border-radius: 8px;
   font-size: 12.5px;
   white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
 }
 .lens-tab:hover:not(:disabled) {
   background: var(--hover);
@@ -453,7 +453,26 @@ button:disabled {
   cursor: default;
 }
 .lens-ico {
-  font-size: 13px;
+  font-size: 15px;
+  line-height: 1;
+  display: inline-flex;
+}
+/* Label is hidden by default and slides open on hover / when selected. */
+.lens-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 0.24s ease, margin-left 0.24s ease, opacity 0.18s ease;
+}
+.lens-tab:hover:not(:disabled) .lens-label,
+.lens-tab.on .lens-label {
+  max-width: 140px;
+  margin-left: 6px;
+  opacity: 1;
 }
 .soon-tag {
   font-size: 9px;

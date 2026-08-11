@@ -23,10 +23,13 @@ export function LensSwitcher({
           disabled={!l.ready}
           onClick={() => l.ready && onLens(l.id)}
           title={l.ready ? l.label : `${l.label} — coming soon`}
+          aria-label={l.label}
         >
           <span className="lens-ico">{l.icon}</span>
-          {l.label}
-          {!l.ready && <span className="soon-tag">soon</span>}
+          <span className="lens-label">
+            {l.label}
+            {!l.ready && <span className="soon-tag">soon</span>}
+          </span>
         </button>
       ))}
     </div>
