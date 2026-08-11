@@ -380,6 +380,7 @@ button:disabled {
 /* ---------- Lens switcher ---------- */
 .lens-switch {
   display: flex;
+  flex-wrap: wrap; /* drop a tab to the next line before overflowing when narrow */
   gap: 4px;
   padding: 8px 10px 6px;
 }
@@ -393,6 +394,7 @@ button:disabled {
   color: var(--text-dim);
   border-radius: 7px;
   font-size: 12.5px;
+  white-space: nowrap;
 }
 .lens-tab:hover:not(:disabled) {
   background: var(--hover);
@@ -570,6 +572,9 @@ button:disabled {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Clip anything that can't shrink far enough so it never bleeds into the
+     preview pane when the sidebar is dragged narrow. */
+  overflow: hidden;
 }
 .sidebar-head {
   display: flex;
@@ -580,6 +585,7 @@ button:disabled {
 }
 .sidebar-search {
   flex: 1;
+  min-width: 0; /* let the input actually shrink instead of forcing overflow */
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text);
