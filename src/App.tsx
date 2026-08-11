@@ -570,10 +570,13 @@ export default function App() {
         onSettings={() => setSettingsOpen(true)}
         onSlideshow={() => setSlideshowSetup(true)}
         onOnThisDay={handleOnThisDay}
+        showFilters={lens !== "occasions"}
         canRescan={!!root && !indexing}
       />
 
-      {root && <FilterChips filter={filter} onChange={setFilter} />}
+      {root && lens !== "occasions" && (
+        <FilterChips filter={filter} onChange={setFilter} />
+      )}
 
       <div className="body">
         {root ? (

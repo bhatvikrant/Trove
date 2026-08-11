@@ -13,6 +13,8 @@ interface Props {
   onSlideshow: () => void;
   onOnThisDay: () => void;
   canRescan: boolean;
+  /** Whether the active lens uses the Filters / date-range controls. */
+  showFilters: boolean;
 }
 
 export function Navbar({
@@ -26,6 +28,7 @@ export function Navbar({
   onSlideshow,
   onOnThisDay,
   canRescan,
+  showFilters,
 }: Props) {
   return (
     // `data-tauri-drag-region` makes the bar behave like a native title bar:
@@ -91,11 +94,15 @@ export function Navbar({
               <path d="M12 12.5l.9 1.9 2.1.3-1.5 1.5.35 2.1-1.85-1-1.85 1 .35-2.1L9 14.7l2.1-.3z" />
             </svg>
           </button>
-          <FiltersMenu filter={filter} onChange={onFilter} />
-          <CalendarPicker
-            range={{ start: filter.start, end: filter.end }}
-            onChange={(r) => onFilter({ ...filter, start: r.start, end: r.end })}
-          />
+          {showFilters && (
+            <>
+              <FiltersMenu filter={filter} onChange={onFilter} />
+              <CalendarPicker
+                range={{ start: filter.start, end: filter.end }}
+                onChange={(r) => onFilter({ ...filter, start: r.start, end: r.end })}
+              />
+            </>
+          )}
         </>
       )}
 
