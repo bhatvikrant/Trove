@@ -1460,3 +1460,20 @@ button:disabled {
 .rdp-weekday {
   color: var(--text-dim);
 }
+
+/* ---------- Reduced motion ----------
+   Honour the OS "reduce motion" setting: drop decorative transitions and
+   animations. The loading spinner is kept — it communicates state, not decor. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spinner {
+    animation: spin 0.7s linear infinite !important;
+  }
+}
