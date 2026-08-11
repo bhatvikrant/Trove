@@ -16,12 +16,17 @@ import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
 import { SlideshowSetup } from "./components/SlideshowSetup";
 import { SlideshowPlayer } from "./components/SlideshowPlayer";
+import { OccasionsView } from "./components/OccasionsView";
+import { OccasionsSidebar } from "./components/OccasionsSidebar";
 import { showToast, dismissToast, Toaster } from "./toast";
 import {
   deleteAsset,
   getDateTree,
   getPeople,
   getPlaces,
+  addSpecialDate,
+  deleteSpecialDate,
+  listSpecialDates,
   listSlideshowAssets,
   mergePeople,
   onIndexProgress,
@@ -45,6 +50,7 @@ import {
   type Lens,
   type Person,
   type Places,
+  type SavedSpecialDate,
   type SlideshowConfig,
   type SlideshowItem,
   type VisionProgress,
@@ -72,6 +78,8 @@ export default function App() {
   // True while a folder is being dragged over the window.
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Saved occasions (recurring special dates) for the Occasions lens.
+  const [occasions, setOccasions] = useState<SavedSpecialDate[] | null>(null);
   // Slideshow: the setup modal, then the resolved items being played.
   const [slideshowSetup, setSlideshowSetup] = useState(false);
   const [slideshow, setSlideshow] = useState<{
@@ -305,6 +313,17 @@ export default function App() {
       .catch((e) => console.error("get_people failed", e));
   }, [root, lens, filter, dataVersion, vision]);
 
+  // Refresh saved occasions (counts depend on the indexed assets).
+  const refreshOccasions = useCallback(() => {
+    listSpecialDates().then(setOccasions).catch(() => setOccasions([]));
+  }, []);
+
+  // Refresh occasions (and their counts) while the Occasions lens is active.
+  useEffect(() => {
+    if (!root || lens !== "occasions") return;
+    refreshOccasions();
+  }, [root, lens, dataVersion, tree, refreshOccasions]);
+
   const handleRenamePerson = useCallback(
     async (clusterId: number, name: string) => {
       try {
@@ -437,6 +456,41 @@ export default function App() {
     }
   }, []);
 
+  const handleAddOccasion = useCallback(
+    async (month: number, day: number, label: string | null) => {
+      try {
+        const row = await addSpecialDate(month, day, label);
+        setOccasions((os) => [...(os ?? []), row].sort(
+          (a, b) => a.month - b.month || a.day - b.day
+        ));
+        showToast(`Added ${label ?? "occasion"}`, { kind: "success" });
+      } catch (e) {
+        await message(String(e), { title: "Couldn’t add", kind: "error" });
+      }
+    },
+    []
+  );
+
+  const handleDeleteOccasion = useCallback(async (id: number) => {
+    setOccasions((os) => (os ? os.filter((o) => o.id !== id) : os));
+    try {
+      await deleteSpecialDate(id);
+    } catch {
+      refreshOccasions();
+    }
+  }, [refreshOccasions]);
+
+  const handlePlayOccasion = useCallback(
+    (o: SavedSpecialDate) =>
+      handleStartSlideshow({
+        ...DEFAULT_SLIDESHOW_CONFIG,
+        specialDates: [
+          { month: o.month, day: o.day, label: o.label ?? undefined },
+        ],
+      }),
+    [handleStartSlideshow]
+  );
+
   // One-tap slideshow of today's calendar day across every year.
   const handleOnThisDay = useCallback(() => {
     const now = new Date();
@@ -550,7 +604,7 @@ export default function App() {
                   refreshToken={dataVersion}
                   hiddenIds={hiddenIds}
                 />
-              ) : (
+              ) : lens === "people" ? (
                 <PeopleTree
                   people={people}
                   filter={filter}
@@ -560,6 +614,12 @@ export default function App() {
                   onRename={handleRenamePerson}
                   focusPerson={focusPerson}
                   refreshToken={dataVersion}
+                />
+              ) : (
+                <OccasionsSidebar
+                  occasions={occasions}
+                  onPlay={handlePlayOccasion}
+                  onDelete={handleDeleteOccasion}
                 />
               )}
             </div>
@@ -584,6 +644,13 @@ export default function App() {
                     onFocusPerson={setFocusPerson}
                     onMerge={handleMergePeople}
                     onRename={handleRenamePerson}
+                  />
+                ) : lens === "occasions" ? (
+                  <OccasionsView
+                    occasions={occasions}
+                    onAdd={handleAddOccasion}
+                    onDelete={handleDeleteOccasion}
+                    onPlay={handlePlayOccasion}
                   />
                 ) : undefined
               }

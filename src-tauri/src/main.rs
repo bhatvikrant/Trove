@@ -1133,6 +1133,88 @@ fn delete_slideshow_preset(id: i64, state: State<AppState>) -> Result<(), String
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpecialDateRow {
+    id: i64,
+    month: u32,
+    day: u32,
+    label: Option<String>,
+    count: i64, // assets matching this month/day in the current folder
+}
+
+/// Saved occasions (recurring month/day), each with its asset count, sorted by
+/// calendar position.
+#[tauri::command]
+fn list_special_dates(state: State<AppState>) -> Result<Vec<SpecialDateRow>, String> {
+    let conn = state.db.lock().unwrap();
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.month, s.day, s.label, \
+               (SELECT COUNT(*) FROM assets a WHERE a.month = s.month AND a.day = s.day) \
+             FROM special_dates s ORDER BY s.month, s.day",
+        )
+        .map_err(e2s)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(SpecialDateRow {
+                id: r.get(0)?,
+                month: r.get(1)?,
+                day: r.get(2)?,
+                label: r.get(3)?,
+                count: r.get(4)?,
+            })
+        })
+        .map_err(e2s)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(e2s)?);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn add_special_date(
+    month: u32,
+    day: u32,
+    label: Option<String>,
+    state: State<AppState>,
+) -> Result<SpecialDateRow, String> {
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err("Invalid date".into());
+    }
+    let now = now_unix();
+    let conn = state.db.lock().unwrap();
+    conn.execute(
+        "INSERT INTO special_dates(month, day, label, created_at) VALUES(?1, ?2, ?3, ?4)",
+        rusqlite::params![month, day, label, now],
+    )
+    .map_err(e2s)?;
+    let id = conn.last_insert_rowid();
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM assets WHERE month = ?1 AND day = ?2",
+            rusqlite::params![month, day],
+            |r| r.get(0),
+        )
+        .map_err(e2s)?;
+    Ok(SpecialDateRow {
+        id,
+        month,
+        day,
+        label,
+        count,
+    })
+}
+
+#[tauri::command]
+fn delete_special_date(id: i64, state: State<AppState>) -> Result<(), String> {
+    let conn = state.db.lock().unwrap();
+    conn.execute("DELETE FROM special_dates WHERE id = ?1", [id])
+        .map_err(e2s)?;
+    Ok(())
+}
+
 /// Persist a cluster's current name into the durable, path-keyed `named_faces`
 /// table so it can be reattached after the folder is re-indexed (which assigns
 /// fresh cluster ids). Keyed by file path + face centre. A cleared name removes
@@ -1514,6 +1596,9 @@ fn main() {
             list_slideshow_presets,
             save_slideshow_preset,
             delete_slideshow_preset,
+            list_special_dates,
+            add_special_date,
+            delete_special_date,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

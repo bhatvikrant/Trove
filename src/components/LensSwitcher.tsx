@@ -4,6 +4,7 @@ const LENSES: { id: Lens; label: string; icon: string; ready: boolean }[] = [
   { id: "date", label: "Date", icon: "🗓️", ready: true },
   { id: "places", label: "Places", icon: "📍", ready: true },
   { id: "people", label: "People", icon: "👤", ready: true },
+  { id: "occasions", label: "Occasions", icon: "🎂", ready: true },
 ];
 
 export function LensSwitcher({

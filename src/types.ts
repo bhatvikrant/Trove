@@ -58,7 +58,7 @@ export interface Settings {
   storeInFolder: boolean;
 }
 
-export type Lens = "date" | "places" | "people";
+export type Lens = "date" | "places" | "people" | "occasions";
 
 export interface PlaceCity {
   city: string;
@@ -216,4 +216,13 @@ export interface SlideshowPreset {
   name: string;
   config: string; // serialized SlideshowConfig
   createdAt: number;
+}
+
+/** A persisted occasion (recurring month+day) with its asset count. */
+export interface SavedSpecialDate {
+  id: number;
+  month: number;
+  day: number;
+  label: string | null;
+  count: number;
 }

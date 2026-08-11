@@ -107,6 +107,16 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             name       TEXT NOT NULL,
             config     TEXT NOT NULL,
             created_at INTEGER NOT NULL
+         );
+
+         -- Saved special dates / occasions (recurring month+day), durable across
+         -- folders. Used by the Occasions tab and slideshow.
+         CREATE TABLE IF NOT EXISTS special_dates (
+            id         INTEGER PRIMARY KEY,
+            month      INTEGER NOT NULL,
+            day        INTEGER NOT NULL,
+            label      TEXT,
+            created_at INTEGER NOT NULL
          );",
     )?;
     Ok(conn)

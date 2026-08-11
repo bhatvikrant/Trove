@@ -14,6 +14,7 @@ import type {
   QuickLocations,
   RecentFolder,
   Settings,
+  SavedSpecialDate,
   SlideshowConfig,
   SlideshowItem,
   SlideshowPreset,
@@ -303,6 +304,25 @@ export async function saveSlideshowPreset(
 /** Delete a saved slideshow preset. */
 export async function deleteSlideshowPreset(id: number): Promise<void> {
   await invoke("delete_slideshow_preset", { id });
+}
+
+/** Saved occasions (recurring dates), each with its asset count. */
+export async function listSpecialDates(): Promise<SavedSpecialDate[]> {
+  return invoke("list_special_dates");
+}
+
+/** Persist a new occasion. */
+export async function addSpecialDate(
+  month: number,
+  day: number,
+  label: string | null
+): Promise<SavedSpecialDate> {
+  return invoke("add_special_date", { month, day, label });
+}
+
+/** Delete a saved occasion. */
+export async function deleteSpecialDate(id: number): Promise<void> {
+  await invoke("delete_special_date", { id });
 }
 
 /** Subscribe to indexing progress. Returns an unlisten function. */
