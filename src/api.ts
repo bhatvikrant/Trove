@@ -4,8 +4,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   Asset,
-  DateRange,
+  AssetFilter,
   DateTree,
+  Facets,
   IndexProgress,
   Kind,
   QuickLocations,
@@ -56,9 +57,9 @@ export async function rescan(): Promise<void> {
   await invoke("rescan");
 }
 
-/** Aggregated year→month→day→kind counts, optionally within a date range. */
-export async function getDateTree(range?: DateRange): Promise<DateTree> {
-  return invoke("get_date_tree", { range: range ?? null });
+/** Aggregated year→month→day→kind counts, within the active filter. */
+export async function getDateTree(filter?: AssetFilter): Promise<DateTree> {
+  return invoke("get_date_tree", { filter: filter ?? null });
 }
 
 /** The individual assets for a given day + kind (kind optional = all kinds). */
@@ -67,24 +68,34 @@ export async function listAssets(params: {
   month: number;
   day: number;
   kind?: Kind | null;
-  range?: DateRange;
+  filter?: AssetFilter;
 }): Promise<Asset[]> {
   return invoke("list_assets", {
     year: params.year,
     month: params.month,
     day: params.day,
     kind: params.kind ?? null,
-    range: params.range ?? null,
+    filter: params.filter ?? null,
   });
 }
 
-/** Full-index name search, optionally constrained to a date range. */
+/** Distinct camera and format facet values with counts. */
+export async function getFacets(): Promise<Facets> {
+  return invoke("get_facets");
+}
+
+/** Star / unstar an asset. */
+export async function setFavorite(id: number, favorite: boolean): Promise<void> {
+  await invoke("set_favorite", { id, favorite });
+}
+
+/** Full-index name search, constrained to the active filter. */
 export async function searchAssets(
   query: string,
-  range?: DateRange,
+  filter?: AssetFilter,
   limit = 500
 ): Promise<Asset[]> {
-  return invoke("search_assets", { query, range: range ?? null, limit });
+  return invoke("search_assets", { query, filter: filter ?? null, limit });
 }
 
 /**

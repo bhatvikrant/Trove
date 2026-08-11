@@ -1,10 +1,11 @@
 import { CalendarPicker } from "./CalendarPicker";
-import type { DateRange } from "../types";
+import { FiltersMenu } from "./FiltersMenu";
+import type { AssetFilter } from "../types";
 
 interface Props {
   root: string | null;
-  range: DateRange;
-  onRange: (r: DateRange) => void;
+  filter: AssetFilter;
+  onFilter: (f: AssetFilter) => void;
   onPickFolder: () => void;
   onRescan: () => void;
   onHome: () => void;
@@ -13,8 +14,8 @@ interface Props {
 
 export function Navbar({
   root,
-  range,
-  onRange,
+  filter,
+  onFilter,
   onPickFolder,
   onRescan,
   onHome,
@@ -47,16 +48,20 @@ export function Navbar({
           >
             ↻
           </button>
-
-          <span className="navbar-root" title={root}>
-            {"‎" + root}
-          </span>
         </>
       )}
 
       <div className="spacer" />
 
-      {root && <CalendarPicker range={range} onChange={onRange} />}
+      {root && (
+        <>
+          <FiltersMenu filter={filter} onChange={onFilter} />
+          <CalendarPicker
+            range={{ start: filter.start, end: filter.end }}
+            onChange={(r) => onFilter({ ...filter, start: r.start, end: r.end })}
+          />
+        </>
+      )}
     </div>
   );
 }

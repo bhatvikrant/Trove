@@ -23,49 +23,41 @@ pub fn is_media(kind: &str) -> bool {
     matches!(kind, "image" | "video" | "audio" | "pdf")
 }
 
-pub struct Capture {
-    pub ts: i64,
-    pub year: i32,
-    pub month: u32,
-    pub day: u32,
-}
 
-/// Determine the capture timestamp for a file, falling back to `mtime`, and
-/// derive the local-calendar year/month/day used for grouping.
-pub fn capture_info(path: &Path, kind: &str, mtime: i64) -> Capture {
-    let ts = match kind {
-        "image" => exif_datetime(path).unwrap_or(mtime),
-        "video" => mp4_creation(path).unwrap_or(mtime),
-        _ => mtime,
-    };
-    let local = Local
+/// Derive local-calendar year/month/day from a unix timestamp.
+pub fn ymd(ts: i64, fallback: i64) -> (i32, u32, u32) {
+    let dt = Local
         .timestamp_opt(ts, 0)
         .single()
-        .or_else(|| Local.timestamp_opt(mtime, 0).single());
-    match local {
-        Some(dt) => Capture {
-            ts,
-            year: dt.year(),
-            month: dt.month(),
-            day: dt.day(),
-        },
-        None => Capture {
-            ts,
-            year: 1970,
-            month: 1,
-            day: 1,
-        },
+        .or_else(|| Local.timestamp_opt(fallback, 0).single());
+    match dt {
+        Some(d) => (d.year(), d.month(), d.day()),
+        None => (1970, 1, 1),
     }
 }
 
-/// Read EXIF DateTimeOriginal (or fallbacks) from an image. Interpreted as
-/// local wall-clock time, since EXIF timestamps carry no timezone.
-fn exif_datetime(path: &Path) -> Option<i64> {
-    let file = File::open(path).ok()?;
+#[derive(Default)]
+pub struct ImageExif {
+    pub datetime: Option<i64>,
+    pub camera: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+/// Read capture time, camera make/model and pixel dimensions from an image's
+/// EXIF in a single pass.
+pub fn extract_exif(path: &Path) -> ImageExif {
+    let mut out = ImageExif::default();
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return out,
+    };
     let mut reader = BufReader::new(file);
-    let exif = exif::Reader::new()
-        .read_from_container(&mut reader)
-        .ok()?;
+    let exif = match exif::Reader::new().read_from_container(&mut reader) {
+        Ok(e) => e,
+        Err(_) => return out,
+    };
+
     for tag in [
         exif::Tag::DateTimeOriginal,
         exif::Tag::DateTimeDigitized,
@@ -73,16 +65,67 @@ fn exif_datetime(path: &Path) -> Option<i64> {
     ] {
         if let Some(field) = exif.get_field(tag, exif::In::PRIMARY) {
             if let exif::Value::Ascii(ref vec) = field.value {
-                if let Some(bytes) = vec.first() {
-                    if let Some(ts) = parse_exif_dt(bytes) {
-                        return Some(ts);
-                    }
+                if let Some(ts) = vec.first().and_then(|b| parse_exif_dt(b)) {
+                    out.datetime = Some(ts);
+                    break;
                 }
             }
         }
     }
-    None
+
+    let make = str_field(&exif, exif::Tag::Make);
+    let model = str_field(&exif, exif::Tag::Model);
+    out.camera = match (make, model) {
+        (Some(mk), Some(md)) => Some(combine_camera(&mk, &md)),
+        (None, Some(md)) => Some(md),
+        (Some(mk), None) => Some(mk),
+        _ => None,
+    };
+
+    out.width = uint_field(&exif, exif::Tag::PixelXDimension)
+        .or_else(|| uint_field(&exif, exif::Tag::ImageWidth));
+    out.height = uint_field(&exif, exif::Tag::PixelYDimension)
+        .or_else(|| uint_field(&exif, exif::Tag::ImageLength));
+    out
 }
+
+fn str_field(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
+    let field = exif.get_field(tag, exif::In::PRIMARY)?;
+    if let exif::Value::Ascii(ref v) = field.value {
+        let s = v
+            .first()
+            .and_then(|b| std::str::from_utf8(b).ok())?
+            .trim()
+            .trim_end_matches('\0')
+            .trim()
+            .to_string();
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    } else {
+        None
+    }
+}
+
+fn uint_field(exif: &exif::Exif, tag: exif::Tag) -> Option<u32> {
+    let field = exif.get_field(tag, exif::In::PRIMARY)?;
+    match &field.value {
+        exif::Value::Short(v) => v.first().map(|x| *x as u32),
+        exif::Value::Long(v) => v.first().copied(),
+        _ => None,
+    }
+}
+
+fn combine_camera(make: &str, model: &str) -> String {
+    if model.to_lowercase().starts_with(&make.to_lowercase()) {
+        model.to_string()
+    } else {
+        format!("{make} {model}")
+    }
+}
+
 
 fn parse_exif_dt(b: &[u8]) -> Option<i64> {
     let s = std::str::from_utf8(b).ok()?.trim();
@@ -95,7 +138,7 @@ fn parse_exif_dt(b: &[u8]) -> Option<i64> {
 /// Values are seconds since 1904-01-01 UTC. We only read small atom headers and
 /// seek across large payloads (like `mdat`), so this stays fast even for large
 /// videos where `moov` sits at the end of the file.
-fn mp4_creation(path: &Path) -> Option<i64> {
+pub fn mp4_creation(path: &Path) -> Option<i64> {
     const EPOCH_1904_TO_1970: i64 = 2_082_844_800;
     let mut f = File::open(path).ok()?;
     let flen = f.metadata().ok()?.len();

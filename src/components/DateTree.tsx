@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { listAssets, searchAssets } from "../api";
 import type {
   Asset,
-  DateRange,
+  AssetFilter,
   DateTree as DateTreeData,
   Kind,
 } from "../types";
@@ -58,7 +58,7 @@ type Row =
 interface Props {
   tree: DateTreeData | null;
   loading: boolean;
-  range: DateRange;
+  filter: AssetFilter;
   selected: Asset | null;
   onSelect: (a: Asset) => void;
   onVisibleAssetsChange?: (assets: Asset[]) => void;
@@ -69,7 +69,7 @@ interface Props {
 export function DateTree({
   tree,
   loading,
-  range,
+  filter,
   selected,
   onSelect,
   onVisibleAssetsChange,
@@ -153,7 +153,7 @@ export function DateTree({
   useEffect(() => {
     setAssetsByKey(new Map());
     setLoadingKeys(new Set());
-  }, [range, tree?.total, refreshToken]);
+  }, [filter, tree?.total, refreshToken]);
 
   // Debounced name search across the whole index.
   useEffect(() => {
@@ -165,7 +165,7 @@ export function DateTree({
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const res = await searchAssets(q, range);
+        const res = await searchAssets(q, filter);
         if (!cancelled) setSearchResults(res);
       } catch (e) {
         console.error("search failed", e);
@@ -175,13 +175,13 @@ export function DateTree({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [query, range]);
+  }, [query, filter]);
 
   const loadAssets = useCallback(
     async (nodeKey: string, y: number, m: number, d: number, k: Kind) => {
       setLoadingKeys((s) => new Set(s).add(nodeKey));
       try {
-        const rows = await listAssets({ year: y, month: m, day: d, kind: k, range });
+        const rows = await listAssets({ year: y, month: m, day: d, kind: k, filter });
         setAssetsByKey((prev) => new Map(prev).set(nodeKey, rows));
       } catch (e) {
         console.error("list_assets failed", e);
@@ -193,7 +193,7 @@ export function DateTree({
         });
       }
     },
-    [range]
+    [filter]
   );
 
   // The kind-group node keys under a given day (e.g. its Photos/Videos rows),
@@ -650,6 +650,7 @@ export function DateTree({
                           {row.asset.name}
                         </span>
                       )}
+                      {row.asset.favorite && <span className="fav-star">★</span>}
                     </>
                   ) : row.kind === "loading" ? (
                     <span className="tree-label" style={{ color: "var(--text-faint)" }}>

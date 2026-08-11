@@ -37,5 +37,19 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         );
         "#,
     )?;
+
+    // Migrations: add columns to existing indexes (ignore "duplicate column").
+    for stmt in [
+        "ALTER TABLE assets ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE assets ADD COLUMN camera TEXT",
+        "ALTER TABLE assets ADD COLUMN width INTEGER",
+        "ALTER TABLE assets ADD COLUMN height INTEGER",
+    ] {
+        let _ = conn.execute(stmt, []);
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_assets_favorite ON assets(favorite);
+         CREATE INDEX IF NOT EXISTS idx_assets_camera ON assets(camera);",
+    )?;
     Ok(conn)
 }

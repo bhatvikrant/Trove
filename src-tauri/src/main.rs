@@ -39,6 +39,7 @@ struct Asset {
     year: i32,
     month: u32,
     day: u32,
+    favorite: bool,
 }
 
 #[derive(Serialize)]
@@ -74,40 +75,88 @@ struct DateTree {
     years: Vec<YearNode>,
 }
 
+/// A combinable set of constraints applied across every browse query.
 #[derive(Deserialize, Default)]
-struct DateRange {
-    start: Option<String>,
+#[serde(rename_all = "camelCase")]
+struct Filter {
+    start: Option<String>, // inclusive date "YYYY-MM-DD"
     end: Option<String>,
+    kinds: Option<Vec<String>>,
+    favorite: Option<bool>,
+    cameras: Option<Vec<String>>,
+    formats: Option<Vec<String>>, // lowercase extensions
+    orientation: Option<String>,  // portrait | landscape | square
 }
 
-/// Convert an inclusive local date range into [start_unix, end_unix) bounds.
-fn range_bounds(range: &Option<DateRange>) -> (Option<i64>, Option<i64>) {
-    let mut lo = None;
-    let mut hi = None;
-    if let Some(r) = range {
-        if let Some(s) = &r.start {
-            if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-                if let Some(dt) = Local
-                    .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
-                    .single()
-                {
-                    lo = Some(dt.timestamp());
-                }
-            }
-        }
-        if let Some(e) = &r.end {
-            if let Ok(d) = NaiveDate::parse_from_str(e, "%Y-%m-%d") {
-                let next = d + Duration::days(1);
-                if let Some(dt) = Local
-                    .from_local_datetime(&next.and_hms_opt(0, 0, 0).unwrap())
-                    .single()
-                {
-                    hi = Some(dt.timestamp());
-                }
-            }
-        }
+fn day_start_unix(s: &str) -> Option<i64> {
+    let d = NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
+    Local
+        .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .map(|dt| dt.timestamp())
+}
+
+fn day_end_unix(s: &str) -> Option<i64> {
+    let d = NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()? + Duration::days(1);
+    Local
+        .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .map(|dt| dt.timestamp())
+}
+
+type Bind = Box<dyn rusqlite::types::ToSql>;
+
+/// Build SQL conditions + bound params for a filter (all combined with AND).
+fn filter_conditions(f: &Option<Filter>) -> (Vec<String>, Vec<Bind>) {
+    let mut conds: Vec<String> = Vec::new();
+    let mut binds: Vec<Bind> = Vec::new();
+    let Some(f) = f else {
+        return (conds, binds);
+    };
+    if let Some(lo) = f.start.as_deref().and_then(day_start_unix) {
+        conds.push("capture_ts >= ?".into());
+        binds.push(Box::new(lo));
     }
-    (lo, hi)
+    if let Some(hi) = f.end.as_deref().and_then(day_end_unix) {
+        conds.push("capture_ts < ?".into());
+        binds.push(Box::new(hi));
+    }
+    let in_clause = |col: &str, vals: &[String], conds: &mut Vec<String>, binds: &mut Vec<Bind>| {
+        if !vals.is_empty() {
+            let ph = vals.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            conds.push(format!("{col} IN ({ph})"));
+            for v in vals {
+                binds.push(Box::new(v.clone()));
+            }
+        }
+    };
+    if let Some(kinds) = &f.kinds {
+        in_clause("kind", kinds, &mut conds, &mut binds);
+    }
+    if let Some(cameras) = &f.cameras {
+        in_clause("camera", cameras, &mut conds, &mut binds);
+    }
+    if let Some(formats) = &f.formats {
+        in_clause("ext", formats, &mut conds, &mut binds);
+    }
+    if f.favorite == Some(true) {
+        conds.push("favorite = 1".into());
+    }
+    match f.orientation.as_deref() {
+        Some("portrait") => conds.push("(width > 0 AND height > 0 AND height > width)".into()),
+        Some("landscape") => conds.push("(width > 0 AND height > 0 AND width > height)".into()),
+        Some("square") => conds.push("(width > 0 AND height > 0 AND width = height)".into()),
+        _ => {}
+    }
+    (conds, binds)
+}
+
+fn where_clause(conds: &[String]) -> String {
+    if conds.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conds.join(" AND "))
+    }
 }
 
 fn start_indexing(state: &AppState, app: &tauri::AppHandle, root: PathBuf) {
@@ -293,41 +342,48 @@ fn rescan(state: State<AppState>, app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_date_tree(range: Option<DateRange>, state: State<AppState>) -> Result<DateTree, String> {
-    let (lo, hi) = range_bounds(&range);
+fn get_date_tree(filter: Option<Filter>, state: State<AppState>) -> Result<DateTree, String> {
+    let (conds, binds) = filter_conditions(&filter);
     let conn = state.db.lock().unwrap();
-    query_date_tree(&conn, lo, hi).map_err(e2s)
+    let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    aggregate_tree(&conn, &where_clause(&conds), &params).map_err(e2s)
 }
 
+/// Test helper: aggregate with just an optional date range.
+#[cfg(test)]
 fn query_date_tree(
     conn: &Connection,
     lo: Option<i64>,
     hi: Option<i64>,
 ) -> rusqlite::Result<DateTree> {
-    let mut conds: Vec<&str> = Vec::new();
-    let mut args: Vec<i64> = Vec::new();
-    if lo.is_some() {
-        conds.push("capture_ts >= ?");
-        args.push(lo.unwrap());
+    let mut conds: Vec<String> = Vec::new();
+    let mut binds: Vec<Bind> = Vec::new();
+    if let Some(lo) = lo {
+        conds.push("capture_ts >= ?".into());
+        binds.push(Box::new(lo));
     }
-    if hi.is_some() {
-        conds.push("capture_ts < ?");
-        args.push(hi.unwrap());
+    if let Some(hi) = hi {
+        conds.push("capture_ts < ?".into());
+        binds.push(Box::new(hi));
     }
-    let where_clause = if conds.is_empty() {
-        String::new()
-    } else {
-        format!(" WHERE {}", conds.join(" AND "))
-    };
+    let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    aggregate_tree(conn, &where_clause(&conds), &params)
+}
+
+fn aggregate_tree(
+    conn: &Connection,
+    where_sql: &str,
+    params: &[&dyn rusqlite::types::ToSql],
+) -> rusqlite::Result<DateTree> {
     let sql = format!(
         "SELECT year, month, day, kind, COUNT(*) FROM assets{} \
          GROUP BY year, month, day, kind \
          ORDER BY year DESC, month DESC, day DESC, kind ASC",
-        where_clause
+        where_sql
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+    let rows = stmt.query_map(params, |r| {
         Ok((
             r.get::<_, i32>(0)?,
             r.get::<_, u32>(1)?,
@@ -389,11 +445,29 @@ fn map_asset(r: &rusqlite::Row) -> rusqlite::Result<Asset> {
         year: r.get(8)?,
         month: r.get(9)?,
         day: r.get(10)?,
+        favorite: r.get::<_, i64>(11)? != 0,
     })
 }
 
 const ASSET_COLS: &str =
-    "id, path, name, ext, kind, size, mtime, capture_ts, year, month, day";
+    "id, path, name, ext, kind, size, mtime, capture_ts, year, month, day, favorite";
+
+fn run_asset_query(
+    conn: &Connection,
+    sql: &str,
+    binds: &[Bind],
+) -> Result<Vec<Asset>, String> {
+    let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(sql).map_err(e2s)?;
+    let rows = stmt
+        .query_map(params.as_slice(), map_asset)
+        .map_err(e2s)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(e2s)?);
+    }
+    Ok(out)
+}
 
 #[tauri::command]
 fn list_assets(
@@ -401,105 +475,103 @@ fn list_assets(
     month: u32,
     day: u32,
     kind: Option<String>,
-    range: Option<DateRange>,
+    filter: Option<Filter>,
     state: State<AppState>,
 ) -> Result<Vec<Asset>, String> {
-    let (lo, hi) = range_bounds(&range);
-    let conn = state.db.lock().unwrap();
-
-    let mut conds: Vec<String> = vec![
-        "year = ?".into(),
-        "month = ?".into(),
-        "day = ?".into(),
-    ];
-    let mut ints: Vec<i64> = vec![year as i64, month as i64, day as i64];
-    let mut kind_val: Option<String> = None;
+    let (mut conds, mut binds) = filter_conditions(&filter);
+    conds.insert(0, "year = ?".into());
+    conds.insert(1, "month = ?".into());
+    conds.insert(2, "day = ?".into());
+    binds.insert(0, Box::new(year as i64));
+    binds.insert(1, Box::new(month as i64));
+    binds.insert(2, Box::new(day as i64));
     if let Some(k) = kind {
         conds.push("kind = ?".into());
-        kind_val = Some(k);
-    }
-    if let Some(lo) = lo {
-        conds.push("capture_ts >= ?".into());
-        ints.push(lo);
-    }
-    if let Some(hi) = hi {
-        conds.push("capture_ts < ?".into());
-        ints.push(hi);
-    }
-
-    let sql = format!(
-        "SELECT {ASSET_COLS} FROM assets WHERE {} ORDER BY capture_ts ASC, name COLLATE NOCASE ASC",
-        conds.join(" AND ")
-    );
-    let mut stmt = conn.prepare(&sql).map_err(e2s)?;
-
-    // Bind params in the exact order the conditions were pushed.
-    let mut binds: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    binds.push(Box::new(year as i64));
-    binds.push(Box::new(month as i64));
-    binds.push(Box::new(day as i64));
-    if let Some(k) = kind_val {
         binds.push(Box::new(k));
     }
-    if let Some(lo) = lo {
-        binds.push(Box::new(lo));
-    }
-    if let Some(hi) = hi {
-        binds.push(Box::new(hi));
-    }
-
-    let rows = stmt
-        .query_map(
-            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
-            map_asset,
-        )
-        .map_err(e2s)?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r.map_err(e2s)?);
-    }
-    Ok(out)
+    let sql = format!(
+        "SELECT {ASSET_COLS} FROM assets{} ORDER BY capture_ts ASC, name COLLATE NOCASE ASC",
+        where_clause(&conds)
+    );
+    let conn = state.db.lock().unwrap();
+    run_asset_query(&conn, &sql, &binds)
 }
 
 #[tauri::command]
 fn search_assets(
     query: String,
-    range: Option<DateRange>,
+    filter: Option<Filter>,
     limit: i64,
     state: State<AppState>,
 ) -> Result<Vec<Asset>, String> {
-    let (lo, hi) = range_bounds(&range);
-    let conn = state.db.lock().unwrap();
-
+    let (mut conds, mut binds) = filter_conditions(&filter);
     let like = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
-    let mut sql = format!("SELECT {ASSET_COLS} FROM assets WHERE name LIKE ?1 ESCAPE '\\'");
-    let mut binds: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(like)];
-    if let Some(lo) = lo {
-        sql.push_str(&format!(" AND capture_ts >= ?{}", binds.len() + 1));
-        binds.push(Box::new(lo));
-    }
-    if let Some(hi) = hi {
-        sql.push_str(&format!(" AND capture_ts < ?{}", binds.len() + 1));
-        binds.push(Box::new(hi));
-    }
-    sql.push_str(&format!(
-        " ORDER BY capture_ts DESC LIMIT ?{}",
-        binds.len() + 1
-    ));
+    conds.insert(0, "name LIKE ? ESCAPE '\\'".into());
+    binds.insert(0, Box::new(like));
+    let sql = format!(
+        "SELECT {ASSET_COLS} FROM assets{} ORDER BY capture_ts DESC LIMIT ?",
+        where_clause(&conds)
+    );
     binds.push(Box::new(limit));
+    let conn = state.db.lock().unwrap();
+    run_asset_query(&conn, &sql, &binds)
+}
 
-    let mut stmt = conn.prepare(&sql).map_err(e2s)?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
-            map_asset,
+#[derive(Serialize)]
+struct FacetValue {
+    value: String,
+    count: i64,
+}
+
+#[derive(Serialize)]
+struct Facets {
+    cameras: Vec<FacetValue>,
+    formats: Vec<FacetValue>,
+}
+
+fn query_facet(conn: &Connection, sql: &str) -> rusqlite::Result<Vec<FacetValue>> {
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([], |r| {
+        Ok(FacetValue {
+            value: r.get(0)?,
+            count: r.get(1)?,
+        })
+    })?;
+    rows.collect()
+}
+
+#[tauri::command]
+fn get_facets(state: State<AppState>) -> Result<Facets, String> {
+    let conn = state.db.lock().unwrap();
+    let cameras = query_facet(
+        &conn,
+        "SELECT camera, COUNT(*) FROM assets \
+         WHERE camera IS NOT NULL AND camera <> '' \
+         GROUP BY camera ORDER BY COUNT(*) DESC, camera ASC",
+    )
+    .map_err(e2s)?;
+    let formats = query_facet(
+        &conn,
+        "SELECT ext, COUNT(*) FROM assets \
+         WHERE ext IS NOT NULL AND ext <> '' \
+         GROUP BY ext ORDER BY COUNT(*) DESC, ext ASC",
+    )
+    .map_err(e2s)?;
+    Ok(Facets { cameras, formats })
+}
+
+#[tauri::command]
+fn set_favorite(id: i64, favorite: bool, state: State<AppState>) -> Result<(), String> {
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE assets SET favorite = ?1 WHERE id = ?2",
+            rusqlite::params![favorite as i64, id],
         )
         .map_err(e2s)?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r.map_err(e2s)?);
-    }
-    Ok(out)
+    Ok(())
 }
 
 #[tauri::command]
@@ -718,6 +790,8 @@ fn main() {
             get_recent_folders,
             remove_recent,
             get_quick_locations,
+            get_facets,
+            set_favorite,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -771,7 +845,12 @@ mod tests {
                 continue;
             }
             let mtime = mtime_of(&path);
-            let cap = metadata::capture_info(&path, kind, mtime);
+            let ts = match kind {
+                "image" => metadata::extract_exif(&path).datetime.unwrap_or(mtime),
+                "video" => metadata::mp4_creation(&path).unwrap_or(mtime),
+                _ => mtime,
+            };
+            let (year, month, day) = metadata::ymd(ts, mtime);
             let name = path.file_name().unwrap().to_string_lossy().to_string();
             conn.execute(
                 "INSERT INTO assets
@@ -784,10 +863,10 @@ mod tests {
                     kind,
                     entry.metadata().unwrap().len() as i64,
                     mtime,
-                    cap.ts,
-                    cap.year,
-                    cap.month,
-                    cap.day,
+                    ts,
+                    year,
+                    month,
+                    day,
                 ],
             )
             .unwrap();

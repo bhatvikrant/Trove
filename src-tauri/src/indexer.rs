@@ -135,7 +135,19 @@ fn run(
 
     let total = found.len() as u64;
 
-    // ---- Phase 2: extract capture dates and upsert in batches.
+    // Bump when the extracted columns change so existing rows get re-extracted
+    // once (the mtime fast-path is skipped for that run).
+    const INDEX_VER: i64 = 2;
+    let stored_ver: i64 = conn
+        .query_row("SELECT v FROM meta WHERE k='index_ver'", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let full_reextract = stored_ver != INDEX_VER;
+
+    // ---- Phase 2: extract capture dates + metadata and upsert in batches.
     let mut indexed: u64 = 0;
     let mut i = 0usize;
     const BATCH: usize = 400;
@@ -151,12 +163,14 @@ fn run(
                 let mut sel = tx.prepare("SELECT mtime FROM assets WHERE path = ?1")?;
                 let mut ins = tx.prepare(
                     r#"INSERT INTO assets
-                        (path, name, ext, kind, size, mtime, capture_ts, year, month, day, seen)
-                       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+                        (path, name, ext, kind, size, mtime, capture_ts, year, month, day,
+                         camera, width, height, seen)
+                       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)
                        ON CONFLICT(path) DO UPDATE SET
                         name=excluded.name, ext=excluded.ext, kind=excluded.kind,
                         size=excluded.size, mtime=excluded.mtime, capture_ts=excluded.capture_ts,
                         year=excluded.year, month=excluded.month, day=excluded.day,
+                        camera=excluded.camera, width=excluded.width, height=excluded.height,
                         seen=excluded.seen"#,
                 )?;
                 let mut touch = tx.prepare("UPDATE assets SET seen = ?2 WHERE path = ?1")?;
@@ -164,13 +178,24 @@ fn run(
                 for f in &found[i..end] {
                     let path_str = f.path.to_string_lossy().to_string();
                     // Fast path: unchanged file — just mark it seen this generation.
-                    let existing: Option<i64> = sel
-                        .query_row([&path_str], |r| r.get(0))
-                        .ok();
-                    if existing == Some(f.mtime) {
+                    let existing: Option<i64> = sel.query_row([&path_str], |r| r.get(0)).ok();
+                    if !full_reextract && existing == Some(f.mtime) {
                         touch.execute(rusqlite::params![path_str, my_gen as i64])?;
                     } else {
-                        let cap = metadata::capture_info(&f.path, f.kind, f.mtime);
+                        let (ts, camera, width, height) = match f.kind {
+                            "image" => {
+                                let ex = metadata::extract_exif(&f.path);
+                                (ex.datetime.unwrap_or(f.mtime), ex.camera, ex.width, ex.height)
+                            }
+                            "video" => (
+                                metadata::mp4_creation(&f.path).unwrap_or(f.mtime),
+                                None,
+                                None,
+                                None,
+                            ),
+                            _ => (f.mtime, None, None, None),
+                        };
+                        let (year, month, day) = metadata::ymd(ts, f.mtime);
                         ins.execute(rusqlite::params![
                             path_str,
                             f.name,
@@ -178,10 +203,13 @@ fn run(
                             f.kind,
                             f.size,
                             f.mtime,
-                            cap.ts,
-                            cap.year,
-                            cap.month,
-                            cap.day,
+                            ts,
+                            year,
+                            month,
+                            day,
+                            camera,
+                            width,
+                            height,
                             my_gen as i64,
                         ])?;
                     }
@@ -220,6 +248,11 @@ fn run(
     let _ = conn.execute(
         "UPDATE recents SET count=?1 WHERE path=?2",
         rusqlite::params![count, root.to_string_lossy().to_string()],
+    );
+    let _ = conn.execute(
+        "INSERT INTO meta(k,v) VALUES('index_ver',?1)
+         ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+        [INDEX_VER.to_string()],
     );
 
     emit(

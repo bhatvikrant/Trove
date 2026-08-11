@@ -65,6 +65,7 @@ interface Props {
   nextAsset: Asset | null;
   onRename: (asset: Asset, newName: string) => void;
   onDelete: (asset: Asset) => void;
+  onToggleFavorite: (asset: Asset) => void;
 }
 
 export function PreviewPane({
@@ -76,6 +77,7 @@ export function PreviewPane({
   nextAsset,
   onRename,
   onDelete,
+  onToggleFavorite,
 }: Props) {
   const canCycle = !!position && position.total > 1;
 
@@ -261,6 +263,14 @@ export function PreviewPane({
             {position.index + 1} of {position.total.toLocaleString()}
           </span>
         )}
+        <button
+          className={`btn icon star-btn ${asset.favorite ? "on" : ""}`}
+          title={asset.favorite ? "Remove from favorites" : "Add to favorites"}
+          aria-label="Toggle favorite"
+          onClick={() => onToggleFavorite(asset)}
+        >
+          {asset.favorite ? "★" : "☆"}
+        </button>
         <button className="btn" onClick={() => revealInFinder(asset.path)}>
           Reveal in Finder
         </button>

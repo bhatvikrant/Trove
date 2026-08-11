@@ -5,6 +5,8 @@ import { PreviewPane } from "./components/PreviewPane";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { EmptyState } from "./components/EmptyState";
+import { FilterChips } from "./components/FilterChips";
+import { LensSwitcher } from "./components/LensSwitcher";
 import {
   deleteAsset,
   getDateTree,
@@ -13,21 +15,23 @@ import {
   pickFolder,
   renameAsset,
   rescan,
+  setFavorite,
   setRoot,
 } from "./api";
-import type {
-  Asset,
-  DateRange,
-  DateTree as DateTreeData,
-  IndexProgress,
+import {
+  EMPTY_FILTER,
+  type Asset,
+  type AssetFilter,
+  type DateTree as DateTreeData,
+  type IndexProgress,
+  type Lens,
 } from "./types";
-
-const EMPTY_RANGE: DateRange = { start: null, end: null };
 
 export default function App() {
   const [root, setRootPath] = useState<string | null>(null);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
-  const [range, setRange] = useState<DateRange>(EMPTY_RANGE);
+  const [filter, setFilter] = useState<AssetFilter>(EMPTY_FILTER);
+  const [lens, setLens] = useState<Lens>("date");
   const [tree, setTree] = useState<DateTreeData | null>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
   const [sidebarW, setSidebarW] = useState(340);
@@ -86,19 +90,32 @@ export default function App() {
     [visibleAssets]
   );
 
-  // Keep a ref so the debounced tree refresh always sees the latest range.
-  const rangeRef = useRef(range);
-  rangeRef.current = range;
+  // Keep a ref so the debounced tree refresh always sees the latest filter.
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
 
   const refreshTree = useCallback(async () => {
     setLoadingTree(true);
     try {
-      const t = await getDateTree(rangeRef.current);
+      const t = await getDateTree(filterRef.current);
       setTree(t);
     } catch (e) {
       console.error("get_date_tree failed", e);
     } finally {
       setLoadingTree(false);
+    }
+  }, []);
+
+  const handleToggleFavorite = useCallback(async (asset: Asset) => {
+    const next = !asset.favorite;
+    try {
+      await setFavorite(asset.id, next);
+      setSelected((cur) =>
+        cur && cur.id === asset.id ? { ...cur, favorite: next } : cur
+      );
+      setDataVersion((v) => v + 1);
+    } catch (e) {
+      await message(String(e), { title: "Couldn’t update", kind: "error" });
     }
   }, []);
 
@@ -143,10 +160,10 @@ export default function App() {
     return () => unlisten?.();
   }, [refreshTree]);
 
-  // Re-query the tree whenever the date range changes.
+  // Re-query the tree whenever the filter changes.
   useEffect(() => {
     if (root) refreshTree();
-  }, [range, root, refreshTree]);
+  }, [filter, root, refreshTree]);
 
   // Open a folder by path (also used by recents, quick locations, drag-drop).
   const openFolderPath = useCallback(async (path: string) => {
@@ -209,7 +226,8 @@ export default function App() {
     setTree(null);
     setProgress(null);
     setVisibleAssets([]);
-    setRange(EMPTY_RANGE);
+    setFilter(EMPTY_FILTER);
+    setLens("date");
   }, []);
 
   const indexing = !!progress && !progress.done;
@@ -248,13 +266,15 @@ export default function App() {
     <div className="app">
       <Navbar
         root={root}
-        range={range}
-        onRange={setRange}
+        filter={filter}
+        onFilter={setFilter}
         onPickFolder={handlePickFolder}
         onRescan={handleRescan}
         onHome={handleHome}
         canRescan={!!root && !indexing}
       />
+
+      {root && <FilterChips filter={filter} onChange={setFilter} />}
 
       <div className={`progress ${indexing && root ? "" : "hidden"}`}>
         {progressPct === null ? (
@@ -268,6 +288,7 @@ export default function App() {
         {root ? (
           <>
             <div className="sidebar" style={{ width: sidebarW }}>
+              <LensSwitcher lens={lens} onLens={setLens} />
               {indexing && (
                 <div className="index-status">
                   <span className="spinner" />
@@ -275,16 +296,20 @@ export default function App() {
                   {progress?.total ? ` of ~${progress.total.toLocaleString()}` : ""}
                 </div>
               )}
-              <DateTree
-                tree={tree}
-                loading={loadingTree}
-                range={range}
-                selected={selected}
-                onSelect={setSelected}
-                onVisibleAssetsChange={setVisibleAssets}
-                onRename={handleRename}
-                refreshToken={dataVersion}
-              />
+              {lens === "date" ? (
+                <DateTree
+                  tree={tree}
+                  loading={loadingTree}
+                  filter={filter}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onVisibleAssetsChange={setVisibleAssets}
+                  onRename={handleRename}
+                  refreshToken={dataVersion}
+                />
+              ) : (
+                <div className="lens-placeholder">Coming soon.</div>
+              )}
             </div>
             <div className="resizer" onMouseDown={onResize} />
             <PreviewPane
@@ -296,6 +321,7 @@ export default function App() {
               nextAsset={neighbors.next}
               onRename={handleRename}
               onDelete={handleDelete}
+              onToggleFavorite={handleToggleFavorite}
             />
           </>
         ) : (

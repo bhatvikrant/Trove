@@ -12,7 +12,43 @@ export interface Asset {
   year: number;
   month: number; // 1-12
   day: number; // 1-31
+  favorite: boolean;
 }
+
+export type Orientation = "portrait" | "landscape" | "square";
+
+/** A combinable set of constraints applied across every browse query. */
+export interface AssetFilter {
+  start: string | null; // inclusive date "YYYY-MM-DD"
+  end: string | null;
+  kinds: Kind[]; // empty = all
+  favorite: boolean;
+  cameras: string[];
+  formats: string[]; // lowercase extensions
+  orientation: Orientation | null;
+}
+
+export const EMPTY_FILTER: AssetFilter = {
+  start: null,
+  end: null,
+  kinds: [],
+  favorite: false,
+  cameras: [],
+  formats: [],
+  orientation: null,
+};
+
+export interface FacetValue {
+  value: string;
+  count: number;
+}
+
+export interface Facets {
+  cameras: FacetValue[];
+  formats: FacetValue[];
+}
+
+export type Lens = "date" | "places" | "people";
 
 export interface KindCount {
   kind: Kind;
