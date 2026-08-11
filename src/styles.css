@@ -5,7 +5,7 @@
   --border: #d9d9e0;
   --text: #1c1c1f;
   --text-dim: #6b6b75;
-  --text-faint: #9a9aa4;
+  --text-faint: #82828d;
   --accent: #3b82f6;
   --accent-soft: rgba(59, 130, 246, 0.14);
   --hover: rgba(0, 0, 0, 0.05);
@@ -25,7 +25,7 @@
     --border: #38383b;
     --text: #f2f2f5;
     --text-dim: #a5a5ad;
-    --text-faint: #6c6c74;
+    --text-faint: #8c8c96;
     --accent: #4a90ff;
     --accent-soft: rgba(74, 144, 255, 0.18);
     --hover: rgba(255, 255, 255, 0.06);
