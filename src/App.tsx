@@ -4,7 +4,7 @@ import { DateTree } from "./components/DateTree";
 import { PreviewPane } from "./components/PreviewPane";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { confirm, message } from "@tauri-apps/plugin-dialog";
+import { message } from "@tauri-apps/plugin-dialog";
 import { EmptyState } from "./components/EmptyState";
 import { FilterChips } from "./components/FilterChips";
 import { LensSwitcher } from "./components/LensSwitcher";
@@ -18,6 +18,7 @@ import {
   getDateTree,
   getPeople,
   getPlaces,
+  mergePeople,
   onIndexProgress,
   onMenuOpenFolder,
   onMenuSettings,
@@ -66,6 +67,11 @@ export default function App() {
   // True in native macOS fullscreen, where the traffic lights are hidden and the
   // navbar can reclaim the left inset that normally clears them.
   const [fullscreen, setFullscreen] = useState(false);
+  // Asset ids hidden from the tree while their deletion is pending undo.
+  const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
+  // The delete awaiting the undo window: the asset and its commit timer.
+  const [undo, setUndo] = useState<{ asset: Asset } | null>(null);
+  const pendingRef = useRef<{ asset: Asset; timer: number } | null>(null);
 
   const handleRename = useCallback(
     async (asset: Asset, newName: string) => {
@@ -142,30 +148,82 @@ export default function App() {
     }
   }, []);
 
-  const handleDelete = useCallback(
+  // Actually move a pending asset to the Trash and drop it from the index.
+  const commitDelete = useCallback(
     async (asset: Asset) => {
-      const ok = await confirm(`“${asset.name}” will be moved to the Trash.`, {
-        title: "Delete asset",
-        kind: "warning",
-        okLabel: "Move to Trash",
-        cancelLabel: "Cancel",
-      });
-      if (!ok) return;
-      // Pick a neighbour to select next, before the row disappears.
-      const idx = visibleAssets.findIndex((a) => a.id === asset.id);
-      const nextSel =
-        visibleAssets[idx + 1] ?? visibleAssets[idx - 1] ?? null;
       try {
         await deleteAsset(asset.path);
-        setSelected(nextSel && nextSel.id !== asset.id ? nextSel : null);
         setDataVersion((v) => v + 1);
         refreshTree();
       } catch (e) {
         await message(String(e), { title: "Couldn’t delete", kind: "error" });
+      } finally {
+        setHiddenIds((prev) => {
+          const n = new Set(prev);
+          n.delete(asset.id);
+          return n;
+        });
       }
     },
-    [visibleAssets, refreshTree]
+    [refreshTree]
   );
+
+  // Delete is optimistic + undoable: hide the row immediately, show a toast,
+  // and only move the file to the Trash once the undo window elapses.
+  const handleDelete = useCallback(
+    (asset: Asset) => {
+      // Flush any still-pending delete before starting a new one.
+      if (pendingRef.current) {
+        clearTimeout(pendingRef.current.timer);
+        commitDelete(pendingRef.current.asset);
+        pendingRef.current = null;
+      }
+      // Pick a neighbour to select next, before the row disappears.
+      const idx = visibleAssets.findIndex((a) => a.id === asset.id);
+      const nextSel = visibleAssets[idx + 1] ?? visibleAssets[idx - 1] ?? null;
+      setHiddenIds((prev) => new Set(prev).add(asset.id));
+      setSelected((cur) =>
+        cur && cur.id === asset.id
+          ? nextSel && nextSel.id !== asset.id
+            ? nextSel
+            : null
+          : cur
+      );
+      const timer = window.setTimeout(() => {
+        pendingRef.current = null;
+        setUndo(null);
+        commitDelete(asset);
+      }, 6000);
+      pendingRef.current = { asset, timer };
+      setUndo({ asset });
+    },
+    [visibleAssets, commitDelete]
+  );
+
+  // Cancel the pending delete and bring the row back.
+  const handleUndo = useCallback(() => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingRef.current = null;
+    setUndo(null);
+    setHiddenIds((prev) => {
+      const n = new Set(prev);
+      n.delete(pending.asset.id);
+      return n;
+    });
+    setSelected(pending.asset);
+  }, []);
+
+  // Commit any pending delete if the app unmounts.
+  useEffect(() => {
+    return () => {
+      if (pendingRef.current) {
+        clearTimeout(pendingRef.current.timer);
+        deleteAsset(pendingRef.current.asset.path).catch(() => {});
+      }
+    };
+  }, []);
 
   // Subscribe to indexing progress; refresh the tree as items stream in.
   useEffect(() => {
@@ -231,6 +289,22 @@ export default function App() {
         );
       } catch (e) {
         await message(String(e), { title: "Couldn’t rename", kind: "error" });
+      }
+    },
+    []
+  );
+
+  const handleMergePeople = useCallback(
+    async (source: number, target: number) => {
+      // Optimistically drop the merged-away card, then refetch for exact counts.
+      setPeople((ps) => (ps ? ps.filter((p) => p.clusterId !== source) : ps));
+      try {
+        await mergePeople(source, target);
+        const fresh = await getPeople(filterRef.current);
+        setPeople(fresh);
+      } catch (e) {
+        await message(String(e), { title: "Couldn’t merge", kind: "error" });
+        getPeople(filterRef.current).then(setPeople).catch(() => {});
       }
     },
     []
@@ -407,6 +481,7 @@ export default function App() {
                   onVisibleAssetsChange={setVisibleAssets}
                   onRename={handleRename}
                   refreshToken={dataVersion}
+                  hiddenIds={hiddenIds}
                 />
               ) : lens === "places" ? (
                 <PlacesTree
@@ -417,6 +492,7 @@ export default function App() {
                   onVisibleAssetsChange={setVisibleAssets}
                   focusPlace={focusPlace}
                   refreshToken={dataVersion}
+                  hiddenIds={hiddenIds}
                 />
               ) : (
                 <PeopleTree
@@ -447,7 +523,11 @@ export default function App() {
                 lens === "places" ? (
                   <PlacesMap places={places} onFocusPlace={setFocusPlace} />
                 ) : lens === "people" ? (
-                  <PeopleGrid people={people} onFocusPerson={setFocusPerson} />
+                  <PeopleGrid
+                    people={people}
+                    onFocusPerson={setFocusPerson}
+                    onMerge={handleMergePeople}
+                  />
                 ) : undefined
               }
             />
@@ -470,6 +550,17 @@ export default function App() {
       )}
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {undo && (
+        <div className="toast" role="status">
+          <span className="toast-msg">
+            Moved “{undo.asset.name}” to Trash
+          </span>
+          <button className="toast-action" onClick={handleUndo}>
+            Undo
+          </button>
+        </div>
+      )}
     </div>
   );
 }

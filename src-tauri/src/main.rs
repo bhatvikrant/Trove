@@ -840,6 +840,45 @@ fn list_person_assets(
     run_asset_query(&conn, &sql, &binds)
 }
 
+/// Merge one person cluster into another (user confirms they're the same
+/// person). Faces move to `target`; `source` is removed. Keeps `target`'s name,
+/// falling back to `source`'s if target has none.
+#[tauri::command]
+fn merge_people(source: i64, target: i64, state: State<AppState>) -> Result<(), String> {
+    if source == target {
+        return Ok(());
+    }
+    let conn = state.db.lock().unwrap();
+    let target_name: Option<String> = conn
+        .query_row("SELECT name FROM people WHERE cluster_id=?1", [target], |r| {
+            r.get(0)
+        })
+        .unwrap_or(None);
+    if target_name.is_none() {
+        let source_name: Option<String> = conn
+            .query_row("SELECT name FROM people WHERE cluster_id=?1", [source], |r| {
+                r.get(0)
+            })
+            .unwrap_or(None);
+        if let Some(n) = source_name {
+            conn.execute(
+                "INSERT INTO people(cluster_id, name) VALUES(?1, ?2)
+                 ON CONFLICT(cluster_id) DO UPDATE SET name=excluded.name",
+                rusqlite::params![target, n],
+            )
+            .map_err(e2s)?;
+        }
+    }
+    conn.execute(
+        "UPDATE faces SET cluster_id=?1 WHERE cluster_id=?2",
+        rusqlite::params![target, source],
+    )
+    .map_err(e2s)?;
+    conn.execute("DELETE FROM people WHERE cluster_id=?1", [source])
+        .map_err(e2s)?;
+    Ok(())
+}
+
 #[tauri::command]
 fn rename_person(cluster_id: i64, name: String, state: State<AppState>) -> Result<(), String> {
     let name = name.trim();
@@ -1129,6 +1168,7 @@ fn main() {
             get_people,
             list_person_assets,
             rename_person,
+            merge_people,
             get_face_thumb,
         ])
         .run(tauri::generate_context!())

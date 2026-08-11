@@ -66,18 +66,29 @@ func process(_ path: String) -> [String: Any] {
                 .compactMap { $0.topCandidates(1).first?.string }
                 .joined(separator: " ")
         }
-        faces = detectFaces(faceReq.results ?? [], in: cg)
+        // Score capture quality and drop poor faces before embedding/clustering.
+        var observed = faceReq.results ?? []
+        if !observed.isEmpty {
+            let quality = VNDetectFaceCaptureQualityRequest()
+            quality.inputFaceObservations = observed
+            if (try? handler.perform([quality])) != nil, let q = quality.results {
+                observed = q
+            }
+        }
+        faces = detectFaces(observed, in: cg)
     } catch {}
     return ["path": path, "labels": labels, "text": text, "faces": faces]
 }
 
 // For each detected face: a top-left-origin normalized box plus an embedding
-// (Vision feature print of a tight crop, base64 of its float bytes).
+// (Vision feature print of a tight crop, base64 of its float bytes). Low
+// capture-quality faces are skipped so they don't pollute clusters.
 func detectFaces(_ observations: [VNFaceObservation], in cg: CGImage) -> [[String: Any]] {
     let W = CGFloat(cg.width)
     let H = CGFloat(cg.height)
     var out: [[String: Any]] = []
     for f in observations {
+        if let q = f.faceCaptureQuality, q < 0.3 { continue }
         let b = f.boundingBox // normalized, origin bottom-left
         // Stored box (top-left origin) for the thumbnail.
         let sx = Double(b.origin.x)

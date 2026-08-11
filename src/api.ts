@@ -148,6 +148,11 @@ export async function renamePerson(clusterId: number, name: string): Promise<voi
   await invoke("rename_person", { clusterId, name });
 }
 
+/** Merge one person cluster into another (they're the same person). */
+export async function mergePeople(source: number, target: number): Promise<void> {
+  await invoke("merge_people", { source, target });
+}
+
 /** A webview-loadable URL for a square face crop. */
 export async function getFaceThumb(
   path: string,

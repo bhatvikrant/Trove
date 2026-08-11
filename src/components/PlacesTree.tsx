@@ -22,6 +22,8 @@ interface Props {
   onVisibleAssetsChange?: (assets: Asset[]) => void;
   focusPlace?: { country: string; city?: string } | null;
   refreshToken?: number;
+  /** Asset ids to hide (e.g. pending an undoable delete). */
+  hiddenIds?: Set<number>;
 }
 
 export function PlacesTree({
@@ -32,6 +34,7 @@ export function PlacesTree({
   onVisibleAssetsChange,
   focusPlace,
   refreshToken,
+  hiddenIds,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [assetsByKey, setAssetsByKey] = useState<Map<string, Asset[]>>(new Map());
@@ -91,7 +94,10 @@ export function PlacesTree({
         if (!expanded.has(ciKey)) continue;
         const assets = assetsByKey.get(ciKey);
         if (assets) {
-          for (const a of assets) out.push({ kind: "asset", key: `a:${a.id}`, depth: 2, asset: a });
+          for (const a of assets) {
+            if (hiddenIds?.has(a.id)) continue;
+            out.push({ kind: "asset", key: `a:${a.id}`, depth: 2, asset: a });
+          }
         } else {
           out.push({ kind: "loading", key: `l:${ciKey}`, depth: 2 });
         }
@@ -102,14 +108,17 @@ export function PlacesTree({
       if (expanded.has(NOLOC)) {
         const assets = assetsByKey.get(NOLOC);
         if (assets) {
-          for (const a of assets) out.push({ kind: "asset", key: `a:${a.id}`, depth: 1, asset: a });
+          for (const a of assets) {
+            if (hiddenIds?.has(a.id)) continue;
+            out.push({ kind: "asset", key: `a:${a.id}`, depth: 1, asset: a });
+          }
         } else {
           out.push({ kind: "loading", key: `l:${NOLOC}`, depth: 1 });
         }
       }
     }
     return out;
-  }, [places, expanded, assetsByKey]);
+  }, [places, expanded, assetsByKey, hiddenIds]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,

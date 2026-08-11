@@ -65,6 +65,8 @@ interface Props {
   onVisibleAssetsChange?: (assets: Asset[]) => void;
   onRename?: (asset: Asset, newName: string) => void;
   refreshToken?: number;
+  /** Asset ids to hide (e.g. pending an undoable delete). */
+  hiddenIds?: Set<number>;
 }
 
 export function DateTree({
@@ -76,6 +78,7 @@ export function DateTree({
   onVisibleAssetsChange,
   onRename,
   refreshToken,
+  hiddenIds,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [assetsByKey, setAssetsByKey] = useState<Map<string, Asset[]>>(new Map());
@@ -263,12 +266,14 @@ export function DateTree({
   // Flatten the expanded tree into a linear list of rows for virtualization.
   const rows = useMemo<Row[]>(() => {
     if (searchResults) {
-      return searchResults.map((a) => ({
-        kind: "asset" as const,
-        key: `s:${a.id}`,
-        depth: 0,
-        asset: a,
-      }));
+      return searchResults
+        .filter((a) => !hiddenIds?.has(a.id))
+        .map((a) => ({
+          kind: "asset" as const,
+          key: `s:${a.id}`,
+          depth: 0,
+          asset: a,
+        }));
     }
     if (!tree) return [];
     const out: Row[] = [];
@@ -321,6 +326,7 @@ export function DateTree({
             const assets = assetsByKey.get(kKey);
             if (assets) {
               for (const a of assets) {
+                if (hiddenIds?.has(a.id)) continue;
                 out.push({ kind: "asset", key: `a:${a.id}`, depth: 4, asset: a });
               }
             } else {
@@ -331,7 +337,7 @@ export function DateTree({
       }
     }
     return out;
-  }, [tree, expanded, assetsByKey, searchResults]);
+  }, [tree, expanded, assetsByKey, searchResults, hiddenIds]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
