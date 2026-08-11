@@ -2215,17 +2215,17 @@ body.dragging-face * {
 }
 .occ-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 .occ-card {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--bg-elevated);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -2233,11 +2233,16 @@ body.dragging-face * {
   border-color: var(--accent);
   box-shadow: var(--shadow);
 }
+.occ-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
 .occ-cal {
   flex: 0 0 auto;
-  width: 52px;
-  height: 56px;
-  border-radius: 10px;
+  width: 54px;
+  height: 58px;
+  border-radius: 11px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2251,42 +2256,45 @@ body.dragging-face * {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 2px 0;
+  padding: 3px 0;
 }
 .occ-cal-day {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
 }
 .occ-body {
   flex: 1;
   min-width: 0;
+  padding-right: 18px; /* clear the hover delete button */
 }
 .occ-card .occ-label {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .occ-count {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-faint);
-  margin-top: 2px;
+  margin-top: 3px;
+  white-space: nowrap;
 }
 .occ-play {
-  flex: 0 0 auto;
-  padding: 6px 12px;
+  width: 100%;
+  justify-content: center;
+  padding: 9px 12px;
 }
 .occ-del {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 22px;
-  height: 22px;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
   border: none;
   background: transparent;
   color: var(--text-faint);
@@ -2384,25 +2392,29 @@ body.dragging-face * {
 
 /* ---------- Month/day picker ---------- */
 .mdp {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
+  display: inline-block;
 }
 .mdp-trigger {
   cursor: pointer;
 }
+/* Floating (portaled) calendar panel — positioned via inline styles. */
 .mdp-panel {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-elevated);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
   padding: 8px 12px 10px;
+  animation: mdp-in 0.12s ease;
 }
-/* Keep sibling fields aligned to the top when the calendar expands. */
+@keyframes mdp-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
 .occ-add,
 .ss-date-add {
-  align-items: flex-start;
+  align-items: center;
 }
 
 /* "From your occasions" quick-add chips in the slideshow setup. */

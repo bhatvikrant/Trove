@@ -67,16 +67,26 @@ export function OccasionsView({ occasions, onAdd, onDelete, onPlay }: Props) {
         <div className="occ-grid">
           {occasions.map((o) => (
             <div className="occ-card" key={o.id}>
-              <div className="occ-cal" aria-hidden="true">
-                <span className="occ-cal-mon">{MONTHS[o.month - 1]}</span>
-                <span className="occ-cal-day">{o.day}</span>
-              </div>
-              <div className="occ-body">
-                <div className="occ-label">
-                  {o.label ?? `${MONTHS[o.month - 1]} ${o.day}`}
+              <button
+                className="occ-del"
+                onClick={() => onDelete(o.id)}
+                aria-label="Delete occasion"
+                title="Delete"
+              >
+                ✕
+              </button>
+              <div className="occ-top">
+                <div className="occ-cal" aria-hidden="true">
+                  <span className="occ-cal-mon">{MONTHS[o.month - 1]}</span>
+                  <span className="occ-cal-day">{o.day}</span>
                 </div>
-                <div className="occ-count">
-                  {o.count.toLocaleString()} {o.count === 1 ? "item" : "items"} across all years
+                <div className="occ-body">
+                  <div className="occ-label">
+                    {o.label ?? `${MONTHS[o.month - 1]} ${o.day}`}
+                  </div>
+                  <div className="occ-count">
+                    {o.count.toLocaleString()} {o.count === 1 ? "item" : "items"} · every year
+                  </div>
                 </div>
               </div>
               <button
@@ -85,15 +95,7 @@ export function OccasionsView({ occasions, onAdd, onDelete, onPlay }: Props) {
                 onClick={() => onPlay(o)}
                 title={o.count === 0 ? "No photos from this day yet" : "Play slideshow"}
               >
-                ▶ Play
-              </button>
-              <button
-                className="occ-del"
-                onClick={() => onDelete(o.id)}
-                aria-label="Delete occasion"
-                title="Delete"
-              >
-                ✕
+                ▶ Play slideshow
               </button>
             </div>
           ))}
