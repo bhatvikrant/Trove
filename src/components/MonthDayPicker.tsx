@@ -30,11 +30,22 @@ interface Props {
  * floats above everything (never clipped by a scrolling parent) and doesn't
  * push the surrounding layout around. The caption shows only the month name.
  */
+// Off-screen but already `position: fixed` so the panel measures at its real
+// (content) width before we position it — otherwise it lays out as a full-width
+// block and the viewport clamp shoves it to the corner.
+const HIDDEN_STYLE: CSSProperties = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  visibility: "hidden",
+  zIndex: 300,
+};
+
 export function MonthDayPicker({ value, onChange, placeholder = "Pick a date" }: Props) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [style, setStyle] = useState<CSSProperties>({ visibility: "hidden" });
+  const [style, setStyle] = useState<CSSProperties>(HIDDEN_STYLE);
 
   // Position the floating panel relative to the trigger, flipping up / clamping
   // to the viewport as needed. Runs before paint to avoid a flash.
@@ -79,7 +90,7 @@ export function MonthDayPicker({ value, onChange, placeholder = "Pick a date" }:
   const label = value ? `${MONTHS[value.month - 1]} ${value.day}` : placeholder;
 
   const openPicker = () => {
-    setStyle({ visibility: "hidden" }); // re-measure on next open
+    setStyle(HIDDEN_STYLE); // re-measure on next open
     setOpen((o) => !o);
   };
 

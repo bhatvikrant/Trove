@@ -2418,6 +2418,7 @@ body.dragging-face * {
 }
 /* Floating (portaled) calendar panel — positioned via inline styles. */
 .mdp-panel {
+  width: max-content;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-elevated);
