@@ -14,7 +14,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
-use tauri::{Manager, State};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{Emitter, Manager, State};
 
 struct AppState {
     db: Mutex<Connection>,
@@ -121,24 +122,162 @@ fn start_indexing(state: &AppState, app: &tauri::AppHandle, root: PathBuf) {
 }
 
 #[tauri::command]
-fn set_root(path: String, state: State<AppState>, app: tauri::AppHandle) -> Result<(), String> {
-    let root = PathBuf::from(&path);
+fn set_root(
+    path: String,
+    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    // Accept a dropped file too — open its containing folder.
+    let mut root = PathBuf::from(&path);
     if !root.is_dir() {
-        return Err(format!("Not a directory: {path}"));
+        if root.is_file() {
+            root = root
+                .parent()
+                .map(|p| p.to_path_buf())
+                .ok_or("File has no parent folder")?;
+        } else {
+            return Err(format!("Not a folder: {path}"));
+        }
     }
+    let root_str = root.to_string_lossy().to_string();
+    let name = root
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&root_str)
+        .to_string();
+    let now = now_unix();
     {
         let conn = state.db.lock().unwrap();
         conn.execute("DELETE FROM assets", []).map_err(e2s)?;
         conn.execute(
             "INSERT INTO meta(k,v) VALUES('root',?1)
              ON CONFLICT(k) DO UPDATE SET v=excluded.v",
-            [&path],
+            [&root_str],
+        )
+        .map_err(e2s)?;
+        conn.execute(
+            "INSERT INTO recents(path,name,last_opened,count) VALUES(?1,?2,?3,NULL)
+             ON CONFLICT(path) DO UPDATE SET name=excluded.name, last_opened=excluded.last_opened",
+            rusqlite::params![root_str, name, now],
         )
         .map_err(e2s)?;
     }
     *state.root.lock().unwrap() = Some(root.clone());
     start_indexing(&state, &app, root);
+    Ok(root_str)
+}
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecentFolder {
+    path: String,
+    name: String,
+    last_opened: i64,
+    count: Option<i64>,
+    exists: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QuickLocation {
+    label: String,
+    path: String,
+    kind: String,
+}
+
+#[derive(Serialize)]
+struct QuickLocations {
+    standard: Vec<QuickLocation>,
+    drives: Vec<QuickLocation>,
+}
+
+#[tauri::command]
+fn get_recent_folders(state: State<AppState>) -> Result<Vec<RecentFolder>, String> {
+    let conn = state.db.lock().unwrap();
+    let mut stmt = conn
+        .prepare(
+            "SELECT path, name, last_opened, count FROM recents \
+             ORDER BY last_opened DESC LIMIT 12",
+        )
+        .map_err(e2s)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<i64>>(3)?,
+            ))
+        })
+        .map_err(e2s)?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (path, name, last_opened, count) = row.map_err(e2s)?;
+        let exists = std::path::Path::new(&path).is_dir();
+        out.push(RecentFolder {
+            path,
+            name,
+            last_opened,
+            count,
+            exists,
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+fn remove_recent(path: String, state: State<AppState>) -> Result<(), String> {
+    state
+        .db
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM recents WHERE path=?1", [&path])
+        .map_err(e2s)?;
     Ok(())
+}
+
+#[tauri::command]
+fn get_quick_locations() -> Result<QuickLocations, String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut standard = Vec::new();
+    for (label, sub, kind) in [
+        ("Pictures", "Pictures", "pictures"),
+        ("Desktop", "Desktop", "desktop"),
+        ("Downloads", "Downloads", "downloads"),
+        ("Movies", "Movies", "movies"),
+    ] {
+        let p = format!("{home}/{sub}");
+        if std::path::Path::new(&p).is_dir() {
+            standard.push(QuickLocation {
+                label: label.into(),
+                path: p,
+                kind: kind.into(),
+            });
+        }
+    }
+
+    let mut drives = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/Volumes") {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                drives.push(QuickLocation {
+                    label: e.file_name().to_string_lossy().to_string(),
+                    path: p.to_string_lossy().to_string(),
+                    kind: "drive".into(),
+                });
+            }
+        }
+    }
+    drives.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    Ok(QuickLocations { standard, drives })
 }
 
 #[tauri::command]
@@ -489,6 +628,53 @@ fn main() {
             let cache_dir = dir.join("thumbnails");
             std::fs::create_dir_all(&cache_dir)?;
 
+            // Application menu with a File ▸ Open Folder… (⌘O) item, plus the
+            // standard Edit menu so clipboard shortcuts work in text inputs.
+            let open_item = MenuItem::with_id(
+                app,
+                "open-folder",
+                "Open Folder…",
+                true,
+                Some("CmdOrCtrl+O"),
+            )?;
+            let app_menu = Submenu::with_items(
+                app,
+                "App",
+                true,
+                &[
+                    &PredefinedMenuItem::about(app, None, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ],
+            )?;
+            let file_menu = Submenu::with_items(
+                app,
+                "File",
+                true,
+                &[
+                    &open_item,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::close_window(app, None)?,
+                ],
+            )?;
+            let edit_menu = Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::redo(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?;
+            let menu = Menu::with_items(app, &[&app_menu, &file_menu, &edit_menu])?;
+            app.set_menu(menu)?;
+
             let conn = db::open(&db_path).expect("failed to open index db");
             let saved_root: Option<PathBuf> = conn
                 .query_row("SELECT v FROM meta WHERE k='root'", [], |r| {
@@ -513,6 +699,11 @@ fn main() {
             }
             Ok(())
         })
+        .on_menu_event(|app, event| {
+            if event.id() == "open-folder" {
+                let _ = app.emit("menu-open-folder", ());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             set_root,
             rescan,
@@ -524,6 +715,9 @@ fn main() {
             rename_asset,
             delete_asset,
             reveal_in_finder,
+            get_recent_folders,
+            remove_recent,
+            get_quick_locations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -28,6 +28,13 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_assets_name ON assets(name COLLATE NOCASE);
 
         CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+
+        CREATE TABLE IF NOT EXISTS recents (
+            path        TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            last_opened INTEGER NOT NULL,
+            count       INTEGER
+        );
         "#,
     )?;
     Ok(conn)

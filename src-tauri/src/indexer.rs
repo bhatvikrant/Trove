@@ -213,6 +213,15 @@ fn run(
         rusqlite::params![my_gen as i64],
     )?;
 
+    // Record the final asset count for this folder's recents entry.
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM assets", [], |r| r.get(0))
+        .unwrap_or(0);
+    let _ = conn.execute(
+        "UPDATE recents SET count=?1 WHERE path=?2",
+        rusqlite::params![count, root.to_string_lossy().to_string()],
+    );
+
     emit(
         app,
         Progress {

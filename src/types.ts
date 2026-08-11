@@ -55,3 +55,22 @@ export interface DateRange {
   start: string | null; // ISO date "YYYY-MM-DD"
   end: string | null; // ISO date "YYYY-MM-DD"
 }
+
+export interface RecentFolder {
+  path: string;
+  name: string;
+  lastOpened: number; // unix seconds
+  count: number | null; // assets indexed last time, if known
+  exists: boolean;
+}
+
+export interface QuickLocation {
+  label: string;
+  path: string;
+  kind: string; // pictures | desktop | downloads | movies | drive
+}
+
+export interface QuickLocations {
+  standard: QuickLocation[];
+  drives: QuickLocation[];
+}

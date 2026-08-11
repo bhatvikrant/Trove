@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navbar } from "./components/Navbar";
 import { DateTree } from "./components/DateTree";
 import { PreviewPane } from "./components/PreviewPane";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { confirm, message } from "@tauri-apps/plugin-dialog";
+import { EmptyState } from "./components/EmptyState";
 import {
   deleteAsset,
   getDateTree,
   onIndexProgress,
+  onMenuOpenFolder,
   pickFolder,
   renameAsset,
   rescan,
@@ -34,6 +37,8 @@ export default function App() {
   const [visibleAssets, setVisibleAssets] = useState<Asset[]>([]);
   // Bumped after a rename/delete to force the tree to re-fetch cached lists.
   const [dataVersion, setDataVersion] = useState(0);
+  // True while a folder is being dragged over the window.
+  const [dragging, setDragging] = useState(false);
 
   const handleRename = useCallback(
     async (asset: Asset, newName: string) => {
@@ -143,15 +148,53 @@ export default function App() {
     if (root) refreshTree();
   }, [range, root, refreshTree]);
 
-  const handlePickFolder = useCallback(async () => {
-    const folder = await pickFolder();
-    if (!folder) return;
-    setRootPath(folder);
+  // Open a folder by path (also used by recents, quick locations, drag-drop).
+  const openFolderPath = useCallback(async (path: string) => {
     setSelected(null);
     setTree(null);
     setProgress({ scanned: 0, indexed: 0, total: null, done: false });
-    await setRoot(folder);
+    try {
+      const resolved = await setRoot(path);
+      setRootPath(resolved);
+    } catch (e) {
+      setProgress(null);
+      await message(String(e), { title: "Couldn’t open folder", kind: "error" });
+    }
   }, []);
+
+  const handlePickFolder = useCallback(async () => {
+    const folder = await pickFolder();
+    if (folder) openFolderPath(folder);
+  }, [openFolderPath]);
+
+  // Menu ▸ Open Folder (⌘O).
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    onMenuOpenFolder(() => handlePickFolder()).then((fn) => (un = fn));
+    return () => un?.();
+  }, [handlePickFolder]);
+
+  // Drag a folder (or file) onto the window to open it.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    try {
+      getCurrentWebview()
+        .onDragDropEvent((event) => {
+          const p = event.payload;
+          if (p.type === "enter" || p.type === "over") setDragging(true);
+          else if (p.type === "leave") setDragging(false);
+          else if (p.type === "drop") {
+            setDragging(false);
+            if (p.paths && p.paths.length) openFolderPath(p.paths[0]);
+          }
+        })
+        .then((fn) => (un = fn))
+        .catch(() => {});
+    } catch {
+      /* not running inside the Tauri webview */
+    }
+    return () => un?.();
+  }, [openFolderPath]);
 
   const handleRescan = useCallback(async () => {
     if (!root) return;
@@ -202,7 +245,7 @@ export default function App() {
         canRescan={!!root && !indexing}
       />
 
-      <div className={`progress ${indexing ? "" : "hidden"}`}>
+      <div className={`progress ${indexing && root ? "" : "hidden"}`}>
         {progressPct === null ? (
           <div className="bar" style={{ width: "100%", opacity: 0.4 }} />
         ) : (
@@ -245,20 +288,21 @@ export default function App() {
             />
           </>
         ) : (
-          <div className="empty">
-            <div className="glyph">🗂️</div>
-            <h2>No folder open</h2>
-            <p>
-              Point Assets Viewer at a folder — a local directory or a connected
-              SSD — and it will index your photos, videos, audio and PDFs by the
-              date they were captured.
-            </p>
-            <button className="btn primary" onClick={handlePickFolder}>
-              Choose Folder…
-            </button>
-          </div>
+          <EmptyState
+            onPickFolder={handlePickFolder}
+            onOpen={openFolderPath}
+          />
         )}
       </div>
+
+      {dragging && (
+        <div className="drop-overlay">
+          <div className="drop-card">
+            <div className="drop-glyph">📥</div>
+            <div className="drop-title">Drop a folder to open it</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

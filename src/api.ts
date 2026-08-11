@@ -2,7 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { Asset, DateRange, DateTree, IndexProgress, Kind } from "./types";
+import type {
+  Asset,
+  DateRange,
+  DateTree,
+  IndexProgress,
+  Kind,
+  QuickLocations,
+  RecentFolder,
+} from "./types";
 
 /** Prompt the user to choose a folder to index. Returns null if cancelled. */
 export async function pickFolder(): Promise<string | null> {
@@ -15,9 +23,32 @@ export async function pickFolder(): Promise<string | null> {
   return selected ?? null;
 }
 
-/** Point the indexer at a root folder. Kicks off a background scan. */
-export async function setRoot(path: string): Promise<void> {
-  await invoke("set_root", { path });
+/**
+ * Point the indexer at a root folder (a dropped file resolves to its folder).
+ * Kicks off a background scan and returns the resolved folder path.
+ */
+export async function setRoot(path: string): Promise<string> {
+  return invoke("set_root", { path });
+}
+
+/** Recently opened folders, most recent first. */
+export async function getRecentFolders(): Promise<RecentFolder[]> {
+  return invoke("get_recent_folders");
+}
+
+/** Remove a folder from the recents list. */
+export async function removeRecent(path: string): Promise<void> {
+  await invoke("remove_recent", { path });
+}
+
+/** Standard folders (Pictures, Desktop, …) and mounted volumes. */
+export async function getQuickLocations(): Promise<QuickLocations> {
+  return invoke("get_quick_locations");
+}
+
+/** Subscribe to the File ▸ Open Folder (⌘O) menu action. */
+export async function onMenuOpenFolder(cb: () => void): Promise<UnlistenFn> {
+  return listen("menu-open-folder", () => cb());
 }
 
 /** Re-scan the current root for new/changed/removed files. */

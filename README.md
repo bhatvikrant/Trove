@@ -12,6 +12,7 @@ Built with **Tauri v2** (Rust) + **React/TypeScript**. Uses macOS's native WebKi
 - **Preview pane** — native rendering for images, video (with controls), audio, and PDFs.
 - **Name search** across the whole index, respecting the active date range.
 - **Background indexing** with a local **SQLite** cache and a disk **thumbnail cache** (via `sips` / `ffmpeg` / QuickLook), so re-opening is instant.
+- **Welcome screen** — when no folder is open: recent folders (with asset counts), quick access to Pictures/Desktop/Downloads/Movies and connected drives, drag-and-drop a folder onto the window, and `⌘O` / a File ▸ Open Folder menu item.
 - Reveal any asset in Finder.
 - **Rename** — double-click an asset's name (in the tree or the preview info bar) to edit it inline; Enter/blur commits, Esc cancels.
 - **Delete** — a Delete button in the preview pane moves the file to the **Trash** (reversible) after a confirmation prompt.
