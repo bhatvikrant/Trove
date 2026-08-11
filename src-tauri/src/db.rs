@@ -44,12 +44,17 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         "ALTER TABLE assets ADD COLUMN camera TEXT",
         "ALTER TABLE assets ADD COLUMN width INTEGER",
         "ALTER TABLE assets ADD COLUMN height INTEGER",
+        "ALTER TABLE assets ADD COLUMN lat REAL",
+        "ALTER TABLE assets ADD COLUMN lon REAL",
+        "ALTER TABLE assets ADD COLUMN place_city TEXT",
+        "ALTER TABLE assets ADD COLUMN place_country TEXT",
     ] {
         let _ = conn.execute(stmt, []);
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_assets_favorite ON assets(favorite);
-         CREATE INDEX IF NOT EXISTS idx_assets_camera ON assets(camera);",
+         CREATE INDEX IF NOT EXISTS idx_assets_camera ON assets(camera);
+         CREATE INDEX IF NOT EXISTS idx_assets_place ON assets(place_country, place_city);",
     )?;
     Ok(conn)
 }

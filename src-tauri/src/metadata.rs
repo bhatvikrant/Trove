@@ -42,6 +42,8 @@ pub struct ImageExif {
     pub camera: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
 }
 
 /// Read capture time, camera make/model and pixel dimensions from an image's
@@ -86,7 +88,35 @@ pub fn extract_exif(path: &Path) -> ImageExif {
         .or_else(|| uint_field(&exif, exif::Tag::ImageWidth));
     out.height = uint_field(&exif, exif::Tag::PixelYDimension)
         .or_else(|| uint_field(&exif, exif::Tag::ImageLength));
+
+    out.lat = gps_decimal(&exif, exif::Tag::GPSLatitude, exif::Tag::GPSLatitudeRef);
+    out.lon = gps_decimal(&exif, exif::Tag::GPSLongitude, exif::Tag::GPSLongitudeRef);
     out
+}
+
+/// Convert an EXIF GPS coordinate (deg/min/sec rational + N/S/E/W ref) to a
+/// signed decimal degree.
+fn gps_decimal(exif: &exif::Exif, coord: exif::Tag, coord_ref: exif::Tag) -> Option<f64> {
+    let field = exif.get_field(coord, exif::In::PRIMARY)?;
+    let dms = match &field.value {
+        exif::Value::Rational(v) if v.len() >= 3 => v,
+        _ => return None,
+    };
+    let mut deg = dms[0].to_f64() + dms[1].to_f64() / 60.0 + dms[2].to_f64() / 3600.0;
+    if let Some(rf) = exif.get_field(coord_ref, exif::In::PRIMARY) {
+        if let exif::Value::Ascii(a) = &rf.value {
+            if let Some(b) = a.first().and_then(|s| s.first()) {
+                if *b == b'S' || *b == b'W' {
+                    deg = -deg;
+                }
+            }
+        }
+    }
+    if deg.is_finite() && deg.abs() <= 180.0 {
+        Some(deg)
+    } else {
+        None
+    }
 }
 
 fn str_field(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {

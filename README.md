@@ -9,7 +9,8 @@ Built with **Tauri v2** (Rust) + **React/TypeScript**. Uses macOS's native WebKi
 - **Date tree** — year → month → day → kind (Photos / Videos / Audio / PDFs), newest first. Fully virtualized, so tens of thousands of items scroll smoothly.
 - **Capture-accurate dates** — reads EXIF `DateTimeOriginal` for photos and the `moov/mvhd` creation time for `.mp4`/`.mov`, falling back to the file's modified time otherwise.
 - **Calendar range picker** with smart presets (Today, Yesterday, Last 7/30 days, This/Last month, This/Last year, All time) plus a two-month range calendar.
-- **Combinable filters** — a Filters popover and an active-filter chip bar for media type, favorites, camera, format, and orientation; all combine (AND) with the date range and apply across the tree, lists, and search. A sidebar lens switcher (Date, with Places/People coming) frames the browse dimension.
+- **Combinable filters** — a Filters popover and an active-filter chip bar for media type, favorites, camera, format, and orientation; all combine (AND) with the date range and apply across the tree, lists, and search. A sidebar lens switcher frames the browse dimension.
+- **Places lens** — photos are geolocated from EXIF GPS and reverse-geocoded **offline** (bundled cities dataset) into Country → City. Browse a place tree on the left and an offline SVG world map with clustered pins on the right; click a pin to jump to that place.
 - **Favorites** — star any asset from the preview pane and filter to just your starred ones.
 - **Preview pane** — native rendering for images, video (with controls), audio, and PDFs.
 - **Name search** across the whole index, respecting the active date range.

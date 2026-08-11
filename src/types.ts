@@ -50,6 +50,25 @@ export interface Facets {
 
 export type Lens = "date" | "places" | "people";
 
+export interface PlaceCity {
+  city: string;
+  count: number;
+  lat: number;
+  lon: number;
+}
+
+export interface PlaceCountry {
+  country: string;
+  count: number;
+  cities: PlaceCity[];
+}
+
+export interface Places {
+  total: number;
+  noLocation: number;
+  countries: PlaceCountry[];
+}
+
 export interface KindCount {
   kind: Kind;
   count: number;

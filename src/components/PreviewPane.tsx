@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { assetUrl, getPreview, revealInFinder } from "../api";
 import type { Asset } from "../types";
 
@@ -66,6 +66,7 @@ interface Props {
   onRename: (asset: Asset, newName: string) => void;
   onDelete: (asset: Asset) => void;
   onToggleFavorite: (asset: Asset) => void;
+  emptyOverride?: ReactNode;
 }
 
 export function PreviewPane({
@@ -78,6 +79,7 @@ export function PreviewPane({
   onRename,
   onDelete,
   onToggleFavorite,
+  emptyOverride,
 }: Props) {
   const canCycle = !!position && position.total > 1;
 
@@ -144,15 +146,17 @@ export function PreviewPane({
   if (!asset) {
     return (
       <div className="preview">
-        <div className="empty">
-          <div className="glyph">👁️</div>
-          <h2>Nothing selected</h2>
-          <p>
-            {total > 0
-              ? `Pick an asset from the tree on the left to preview it here. ${total.toLocaleString()} assets in view.`
-              : "Select an asset from the date tree to preview it."}
-          </p>
-        </div>
+        {emptyOverride ?? (
+          <div className="empty">
+            <div className="glyph">👁️</div>
+            <h2>Nothing selected</h2>
+            <p>
+              {total > 0
+                ? `Pick an asset from the tree on the left to preview it here. ${total.toLocaleString()} assets in view.`
+                : "Select an asset from the tree to preview it."}
+            </p>
+          </div>
+        )}
       </div>
     );
   }

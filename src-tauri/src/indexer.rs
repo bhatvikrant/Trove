@@ -137,7 +137,7 @@ fn run(
 
     // Bump when the extracted columns change so existing rows get re-extracted
     // once (the mtime fast-path is skipped for that run).
-    const INDEX_VER: i64 = 2;
+    const INDEX_VER: i64 = 3;
     let stored_ver: i64 = conn
         .query_row("SELECT v FROM meta WHERE k='index_ver'", [], |r| {
             r.get::<_, String>(0)
@@ -164,13 +164,15 @@ fn run(
                 let mut ins = tx.prepare(
                     r#"INSERT INTO assets
                         (path, name, ext, kind, size, mtime, capture_ts, year, month, day,
-                         camera, width, height, seen)
-                       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)
+                         camera, width, height, lat, lon, place_city, place_country, seen)
+                       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
                        ON CONFLICT(path) DO UPDATE SET
                         name=excluded.name, ext=excluded.ext, kind=excluded.kind,
                         size=excluded.size, mtime=excluded.mtime, capture_ts=excluded.capture_ts,
                         year=excluded.year, month=excluded.month, day=excluded.day,
                         camera=excluded.camera, width=excluded.width, height=excluded.height,
+                        lat=excluded.lat, lon=excluded.lon,
+                        place_city=excluded.place_city, place_country=excluded.place_country,
                         seen=excluded.seen"#,
                 )?;
                 let mut touch = tx.prepare("UPDATE assets SET seen = ?2 WHERE path = ?1")?;
@@ -182,18 +184,27 @@ fn run(
                     if !full_reextract && existing == Some(f.mtime) {
                         touch.execute(rusqlite::params![path_str, my_gen as i64])?;
                     } else {
-                        let (ts, camera, width, height) = match f.kind {
+                        let mut camera = None;
+                        let mut width = None;
+                        let mut height = None;
+                        let mut lat: Option<f64> = None;
+                        let mut lon: Option<f64> = None;
+                        let ts = match f.kind {
                             "image" => {
                                 let ex = metadata::extract_exif(&f.path);
-                                (ex.datetime.unwrap_or(f.mtime), ex.camera, ex.width, ex.height)
+                                camera = ex.camera;
+                                width = ex.width;
+                                height = ex.height;
+                                lat = ex.lat;
+                                lon = ex.lon;
+                                ex.datetime.unwrap_or(f.mtime)
                             }
-                            "video" => (
-                                metadata::mp4_creation(&f.path).unwrap_or(f.mtime),
-                                None,
-                                None,
-                                None,
-                            ),
-                            _ => (f.mtime, None, None, None),
+                            "video" => metadata::mp4_creation(&f.path).unwrap_or(f.mtime),
+                            _ => f.mtime,
+                        };
+                        let (city, country) = match (lat, lon) {
+                            (Some(la), Some(lo)) => crate::places::geocode(la, lo),
+                            _ => (None, None),
                         };
                         let (year, month, day) = metadata::ymd(ts, f.mtime);
                         ins.execute(rusqlite::params![
@@ -210,6 +221,10 @@ fn run(
                             camera,
                             width,
                             height,
+                            lat,
+                            lon,
+                            city,
+                            country,
                             my_gen as i64,
                         ])?;
                     }

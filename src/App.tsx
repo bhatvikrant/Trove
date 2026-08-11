@@ -7,9 +7,12 @@ import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { EmptyState } from "./components/EmptyState";
 import { FilterChips } from "./components/FilterChips";
 import { LensSwitcher } from "./components/LensSwitcher";
+import { PlacesTree } from "./components/PlacesTree";
+import { PlacesMap } from "./components/PlacesMap";
 import {
   deleteAsset,
   getDateTree,
+  getPlaces,
   onIndexProgress,
   onMenuOpenFolder,
   pickFolder,
@@ -25,6 +28,7 @@ import {
   type DateTree as DateTreeData,
   type IndexProgress,
   type Lens,
+  type Places,
 } from "./types";
 
 export default function App() {
@@ -32,6 +36,8 @@ export default function App() {
   const [progress, setProgress] = useState<IndexProgress | null>(null);
   const [filter, setFilter] = useState<AssetFilter>(EMPTY_FILTER);
   const [lens, setLens] = useState<Lens>("date");
+  const [places, setPlaces] = useState<Places | null>(null);
+  const [focusPlace, setFocusPlace] = useState<{ country: string; city?: string } | null>(null);
   const [tree, setTree] = useState<DateTreeData | null>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
   const [sidebarW, setSidebarW] = useState(340);
@@ -164,6 +170,14 @@ export default function App() {
   useEffect(() => {
     if (root) refreshTree();
   }, [filter, root, refreshTree]);
+
+  // Re-query places while the Places lens is active.
+  useEffect(() => {
+    if (!root || lens !== "places") return;
+    getPlaces(filter)
+      .then(setPlaces)
+      .catch((e) => console.error("get_places failed", e));
+  }, [root, lens, filter, dataVersion, tree]);
 
   // Open a folder by path (also used by recents, quick locations, drag-drop).
   const openFolderPath = useCallback(async (path: string) => {
@@ -307,6 +321,16 @@ export default function App() {
                   onRename={handleRename}
                   refreshToken={dataVersion}
                 />
+              ) : lens === "places" ? (
+                <PlacesTree
+                  places={places}
+                  filter={filter}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onVisibleAssetsChange={setVisibleAssets}
+                  focusPlace={focusPlace}
+                  refreshToken={dataVersion}
+                />
               ) : (
                 <div className="lens-placeholder">Coming soon.</div>
               )}
@@ -322,6 +346,11 @@ export default function App() {
               onRename={handleRename}
               onDelete={handleDelete}
               onToggleFavorite={handleToggleFavorite}
+              emptyOverride={
+                lens === "places" ? (
+                  <PlacesMap places={places} onFocusPlace={setFocusPlace} />
+                ) : undefined
+              }
             />
           </>
         ) : (

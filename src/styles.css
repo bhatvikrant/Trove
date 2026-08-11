@@ -446,6 +446,58 @@ button:disabled {
   background: rgba(245, 197, 24, 0.12);
 }
 
+/* ---------- Places map ---------- */
+.places-map {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.places-map-head {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  font-variant-numeric: tabular-nums;
+}
+.places-map-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 20px;
+  min-height: 0;
+}
+.world-svg {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+}
+.world-ocean {
+  fill: var(--bg-sidebar);
+}
+.world-grat line {
+  stroke: var(--border);
+  stroke-width: 0.3;
+  opacity: 0.7;
+}
+.world-land ellipse {
+  fill: var(--border);
+  opacity: 0.55;
+}
+.map-pin {
+  fill: #ec4899;
+  fill-opacity: 0.72;
+  stroke: #fff;
+  stroke-width: 0.4;
+  cursor: pointer;
+  transition: fill-opacity 0.1s;
+}
+.map-pin:hover {
+  fill-opacity: 1;
+}
+
 /* ---------- Main body ---------- */
 .body {
   flex: 1;

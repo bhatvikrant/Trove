@@ -9,6 +9,7 @@ import type {
   Facets,
   IndexProgress,
   Kind,
+  Places,
   QuickLocations,
   RecentFolder,
 } from "./types";
@@ -87,6 +88,24 @@ export async function getFacets(): Promise<Facets> {
 /** Star / unstar an asset. */
 export async function setFavorite(id: number, favorite: boolean): Promise<void> {
   await invoke("set_favorite", { id, favorite });
+}
+
+/** Aggregated country → city counts (+ coordinates) within the filter. */
+export async function getPlaces(filter?: AssetFilter): Promise<Places> {
+  return invoke("get_places", { filter: filter ?? null });
+}
+
+/** Assets at a place; country=null is the "no location" bucket. */
+export async function listPlaceAssets(params: {
+  country: string | null;
+  city?: string | null;
+  filter?: AssetFilter;
+}): Promise<Asset[]> {
+  return invoke("list_place_assets", {
+    country: params.country,
+    city: params.city ?? null,
+    filter: params.filter ?? null,
+  });
 }
 
 /** Full-index name search, constrained to the active filter. */

@@ -4,6 +4,7 @@
 mod db;
 mod indexer;
 mod metadata;
+mod places;
 mod thumbs;
 
 use chrono::{Duration, Local, NaiveDate, TimeZone};
@@ -574,6 +575,125 @@ fn set_favorite(id: i64, favorite: bool, state: State<AppState>) -> Result<(), S
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaceCity {
+    city: String,
+    count: i64,
+    lat: f64,
+    lon: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaceCountry {
+    country: String,
+    count: i64,
+    cities: Vec<PlaceCity>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Places {
+    total: i64,
+    no_location: i64,
+    countries: Vec<PlaceCountry>,
+}
+
+/// Aggregated country → city counts (with representative coordinates for map
+/// pins), plus the count of assets with no location — within the filter.
+#[tauri::command]
+fn get_places(filter: Option<Filter>, state: State<AppState>) -> Result<Places, String> {
+    let (conds, binds) = filter_conditions(&filter);
+    let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
+    let conn = state.db.lock().unwrap();
+
+    let mut located = conds.clone();
+    located.push("place_country IS NOT NULL".into());
+    let sql = format!(
+        "SELECT place_country, place_city, COUNT(*), AVG(lat), AVG(lon) FROM assets{} \
+         GROUP BY place_country, place_city \
+         ORDER BY place_country ASC, COUNT(*) DESC",
+        where_clause(&located)
+    );
+    let mut stmt = conn.prepare(&sql).map_err(e2s)?;
+    let rows = stmt
+        .query_map(params.as_slice(), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<f64>>(3)?,
+                r.get::<_, Option<f64>>(4)?,
+            ))
+        })
+        .map_err(e2s)?;
+
+    let mut countries: Vec<PlaceCountry> = Vec::new();
+    let mut located_total = 0i64;
+    for row in rows {
+        let (country, city, cnt, lat, lon) = row.map_err(e2s)?;
+        located_total += cnt;
+        if countries.last().map(|c| c.country.as_str()) != Some(country.as_str()) {
+            countries.push(PlaceCountry {
+                country: country.clone(),
+                count: 0,
+                cities: Vec::new(),
+            });
+        }
+        let c = countries.last_mut().unwrap();
+        c.count += cnt;
+        c.cities.push(PlaceCity {
+            city: city.unwrap_or_else(|| "Unknown".into()),
+            count: cnt,
+            lat: lat.unwrap_or(0.0),
+            lon: lon.unwrap_or(0.0),
+        });
+    }
+
+    let mut nl = conds.clone();
+    nl.push("place_country IS NULL".into());
+    let nl_sql = format!("SELECT COUNT(*) FROM assets{}", where_clause(&nl));
+    let no_location: i64 = conn
+        .query_row(&nl_sql, params.as_slice(), |r| r.get(0))
+        .map_err(e2s)?;
+
+    Ok(Places {
+        total: located_total + no_location,
+        no_location,
+        countries,
+    })
+}
+
+/// Assets at a place. `country = None` means the "no location" bucket; with a
+/// country and no city, all assets in that country.
+#[tauri::command]
+fn list_place_assets(
+    country: Option<String>,
+    city: Option<String>,
+    filter: Option<Filter>,
+    state: State<AppState>,
+) -> Result<Vec<Asset>, String> {
+    let (mut conds, mut binds) = filter_conditions(&filter);
+    match country {
+        None => conds.push("place_country IS NULL".into()),
+        Some(c) => {
+            conds.push("place_country = ?".into());
+            binds.push(Box::new(c));
+            if let Some(ci) = city {
+                conds.push("place_city = ?".into());
+                binds.push(Box::new(ci));
+            }
+        }
+    }
+    let sql = format!(
+        "SELECT {ASSET_COLS} FROM assets{} ORDER BY capture_ts ASC, name COLLATE NOCASE ASC",
+        where_clause(&conds)
+    );
+    let conn = state.db.lock().unwrap();
+    run_asset_query(&conn, &sql, &binds)
+}
+
 #[tauri::command]
 fn get_thumb(path: String, size: u32, state: State<AppState>) -> Result<Option<String>, String> {
     let p = std::path::Path::new(&path);
@@ -792,6 +912,8 @@ fn main() {
             get_quick_locations,
             get_facets,
             set_favorite,
+            get_places,
+            list_place_assets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
