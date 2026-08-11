@@ -142,20 +142,6 @@ export function DateTree({
     [allExpandableKeys]
   );
 
-  // Expand or collapse an entire branch (e.g. a whole year or month).
-  const toggleSubtree = useCallback(
-    (nodeKey: string) => {
-      const keys = subtreeKeysFor(nodeKey);
-      setExpanded((prev) => {
-        const fully = keys.every((k) => prev.has(k));
-        const next = new Set(prev);
-        keys.forEach((k) => (fully ? next.delete(k) : next.add(k)));
-        return next;
-      });
-    },
-    [subtreeKeysFor]
-  );
-
   // Reset cached asset lists whenever the tree identity (root/range) changes.
   useEffect(() => {
     setAssetsByKey(new Map());
@@ -201,6 +187,67 @@ export function DateTree({
       }
     },
     [range]
+  );
+
+  // The kind-group node keys under a given day (e.g. its Photos/Videos rows),
+  // with the info needed to lazily load each group's assets.
+  const dayKindKeys = useCallback(
+    (dayKey: string) => {
+      const parts = dayKey.split(":"); // y:Y:m:M:d:D
+      const y = Number(parts[1]);
+      const m = Number(parts[3]);
+      const d = Number(parts[5]);
+      const dn = tree?.years
+        .find((n) => n.year === y)
+        ?.months.find((n) => n.month === m)
+        ?.days.find((n) => n.day === d);
+      return (dn?.kinds ?? []).map((kc) => ({
+        kindKey: `${dayKey}:k:${kc.kind}`,
+        y,
+        m,
+        d,
+        k: kc.kind,
+      }));
+    },
+    [tree]
+  );
+
+  // The full set of node keys an "expand all" on this row toggles: date nodes
+  // for a year/month (down to the day level), or the day plus its kind groups.
+  const subtreeToggleKeys = useCallback(
+    (row: Row): string[] => {
+      if (row.kind === "day") {
+        return [row.nodeKey, ...dayKindKeys(row.nodeKey).map((x) => x.kindKey)];
+      }
+      if (row.kind === "year" || row.kind === "month") {
+        return subtreeKeysFor(row.nodeKey);
+      }
+      return [];
+    },
+    [dayKindKeys, subtreeKeysFor]
+  );
+
+  // Expand or collapse an entire branch (a whole year, month, or day). Expanding
+  // a day also loads its kind groups' assets so nothing is left "loading".
+  const toggleSubtree = useCallback(
+    (row: Row) => {
+      const keys = subtreeToggleKeys(row);
+      if (keys.length === 0) return;
+      const fully = keys.every((k) => expanded.has(k));
+      if (!fully && row.kind === "day") {
+        for (const { kindKey, y, m, d, k } of dayKindKeys(row.nodeKey)) {
+          if (!assetsByKey.has(kindKey) && !loadingKeys.has(kindKey)) {
+            loadAssets(kindKey, y, m, d, k);
+          }
+        }
+      }
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        keys.forEach((k) => (fully ? next.delete(k) : next.add(k)));
+        return next;
+      });
+    },
+    [subtreeToggleKeys, dayKindKeys, expanded, assetsByKey, loadingKeys, loadAssets]
   );
 
   // Flatten the expanded tree into a linear list of rows for virtualization.
@@ -508,13 +555,10 @@ export function DateTree({
               row.kind !== "asset" && row.kind !== "loading" && expanded.has(row.nodeKey);
             const isSelected = row.kind === "asset" && selected?.id === row.asset.id;
             const hasChildren = row.kind !== "asset" && row.kind !== "loading";
-            // Branch fold/unfold appears on parent rows that nest further date
-            // nodes beneath them (years and months).
-            const subtreeKeys =
-              row.kind !== "asset" && row.kind !== "loading"
-                ? subtreeKeysFor(row.nodeKey)
-                : [];
-            const showSubtreeBtn = subtreeKeys.length > 1;
+            // Branch fold/unfold appears on every folder row — years, months
+            // and days (a day expands/collapses its kind groups).
+            const subtreeKeys = subtreeToggleKeys(row);
+            const showSubtreeBtn = subtreeKeys.length > 0;
             const subtreeFully =
               showSubtreeBtn && subtreeKeys.every((k) => expanded.has(k));
             return (
@@ -583,7 +627,7 @@ export function DateTree({
                           onKeyDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
                             e.stopPropagation();
-                            toggleSubtree(row.nodeKey);
+                            toggleSubtree(row);
                           }}
                         >
                           {subtreeFully ? <CollapseIcon size={13} /> : <ExpandIcon size={13} />}
