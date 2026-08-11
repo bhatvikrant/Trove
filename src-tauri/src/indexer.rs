@@ -330,6 +330,13 @@ fn enrich_vision(
     if total == 0 {
         return Ok(());
     }
+    // OCR quality setting: "accurate" (default) unless the user chose "fast".
+    let accurate = conn
+        .query_row("SELECT v FROM meta WHERE k='vision_quality'", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .map(|v| v != "fast")
+        .unwrap_or(true);
     let mut processed = 0i64;
     loop {
         if superseded(generation, my_gen) {
@@ -346,7 +353,7 @@ fn enrich_vision(
             break;
         }
         let paths: Vec<String> = batch.iter().map(|(_, p)| p.clone()).collect();
-        let results = crate::vision::run_batch(helper, &paths);
+        let results = crate::vision::run_batch(helper, &paths, accurate);
 
         let tx = conn.transaction()?;
         {

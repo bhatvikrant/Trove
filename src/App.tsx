@@ -10,12 +10,14 @@ import { FilterChips } from "./components/FilterChips";
 import { LensSwitcher } from "./components/LensSwitcher";
 import { PlacesTree } from "./components/PlacesTree";
 import { PlacesMap } from "./components/PlacesMap";
+import { SettingsModal } from "./components/SettingsModal";
 import {
   deleteAsset,
   getDateTree,
   getPlaces,
   onIndexProgress,
   onMenuOpenFolder,
+  onMenuSettings,
   onVisionProgress,
   pickFolder,
   renameAsset,
@@ -53,6 +55,7 @@ export default function App() {
   const [dataVersion, setDataVersion] = useState(0);
   // True while a folder is being dragged over the window.
   const [dragging, setDragging] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // True in native macOS fullscreen, where the traffic lights are hidden and the
   // navbar can reclaim the left inset that normally clears them.
   const [fullscreen, setFullscreen] = useState(false);
@@ -177,6 +180,13 @@ export default function App() {
   useEffect(() => {
     let un: (() => void) | undefined;
     onVisionProgress((p) => setVision(p.done ? null : p)).then((fn) => (un = fn));
+    return () => un?.();
+  }, []);
+
+  // Settings… (⌘,) menu.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    onMenuSettings(() => setSettingsOpen(true)).then((fn) => (un = fn));
     return () => un?.();
   }, []);
 
@@ -410,6 +420,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

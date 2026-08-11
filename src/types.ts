@@ -51,6 +51,12 @@ export interface Facets {
   scenes: FacetValue[];
 }
 
+export type VisionQuality = "accurate" | "fast";
+
+export interface Settings {
+  visionQuality: VisionQuality;
+}
+
 export type Lens = "date" | "places" | "people";
 
 export interface PlaceCity {

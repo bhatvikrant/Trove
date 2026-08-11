@@ -12,7 +12,9 @@ import type {
   Places,
   QuickLocations,
   RecentFolder,
+  Settings,
   VisionProgress,
+  VisionQuality,
 } from "./types";
 
 /** Prompt the user to choose a folder to index. Returns null if cancelled. */
@@ -52,6 +54,21 @@ export async function getQuickLocations(): Promise<QuickLocations> {
 /** Subscribe to the File ▸ Open Folder (⌘O) menu action. */
 export async function onMenuOpenFolder(cb: () => void): Promise<UnlistenFn> {
   return listen("menu-open-folder", () => cb());
+}
+
+/** Subscribe to the Settings… (⌘,) menu action. */
+export async function onMenuSettings(cb: () => void): Promise<UnlistenFn> {
+  return listen("menu-settings", () => cb());
+}
+
+/** Read app settings. */
+export async function getSettings(): Promise<Settings> {
+  return invoke("get_settings");
+}
+
+/** Set analysis (OCR) quality; re-analyzes photos in the background. */
+export async function setVisionQuality(quality: VisionQuality): Promise<void> {
+  await invoke("set_vision_quality", { quality });
 }
 
 /** Re-scan the current root for new/changed/removed files. */

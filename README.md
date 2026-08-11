@@ -11,7 +11,8 @@ Built with **Tauri v2** (Rust) + **React/TypeScript**. Uses macOS's native WebKi
 - **Calendar range picker** with smart presets (Today, Yesterday, Last 7/30 days, This/Last month, This/Last year, All time) plus a two-month range calendar.
 - **Combinable filters** — a Filters popover and an active-filter chip bar for media type, favorites, camera, format, and orientation; all combine (AND) with the date range and apply across the tree, lists, and search. A sidebar lens switcher frames the browse dimension.
 - **Places lens** — photos are geolocated from EXIF GPS and reverse-geocoded **offline** (bundled cities dataset) into Country → City. Browse a place tree on the left and an offline SVG world map with clustered pins on the right; click a pin to jump to that place.
-- **Scene & text (OCR)** — a macOS **Vision** helper tags each photo with content labels (beach, food, document, …) for a **Scene** filter, and recognizes text in images so **search matches words inside screenshots and photos**. Runs as an offline background pass after indexing.
+- **Scene & text (OCR)** — a macOS **Vision** helper tags each photo with content labels (beach, food, document, …) for a **Scene** filter, and recognizes text in images so **search matches words inside screenshots and photos**. Runs as an offline background pass after indexing, parallelized across all cores.
+- **Settings** (⌘,) — choose the analysis quality: **Best accuracy** (default) or **Fast** (quicker, may miss small text). Changing it re-analyzes in the background.
 - **Favorites** — star any asset from the preview pane and filter to just your starred ones.
 - **Preview pane** — native rendering for images, video (with controls), audio, and PDFs.
 - **Name search** across the whole index, respecting the active date range.

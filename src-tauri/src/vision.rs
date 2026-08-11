@@ -26,12 +26,13 @@ pub struct VisionData {
 /// Run the macOS Vision helper over a batch of image paths (piped via stdin,
 /// one per line) and collect path → {labels, text}. A writer thread feeds
 /// stdin while we read stdout, so large batches can't deadlock on pipe buffers.
-pub fn run_batch(helper: &Path, paths: &[String]) -> HashMap<String, VisionData> {
+pub fn run_batch(helper: &Path, paths: &[String], accurate: bool) -> HashMap<String, VisionData> {
     let mut out = HashMap::new();
     if paths.is_empty() {
         return out;
     }
     let mut child = match Command::new(helper)
+        .env("TROVE_OCR_MODE", if accurate { "accurate" } else { "fast" })
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -85,7 +86,7 @@ mod tests {
         if !helper.exists() {
             return;
         }
-        let res = super::run_batch(&helper, &[img.clone()]);
+        let res = super::run_batch(&helper, &[img.clone()], true);
         let d = res.get(&img).expect("result for image");
         assert!(
             !d.text.is_empty() || !d.labels.is_empty(),

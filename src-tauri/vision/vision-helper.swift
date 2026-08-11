@@ -10,6 +10,8 @@ import Vision
 
 let outLock = NSLock()
 let MAX_DIM = 2560 // downsample cap — plenty for classification and most OCR
+// OCR quality is chosen by the app: "accurate" (default, slower) or "fast".
+let fastOCR = ProcessInfo.processInfo.environment["TROVE_OCR_MODE"] == "fast"
 
 func emit(_ obj: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: obj),
@@ -41,10 +43,10 @@ func process(_ path: String) -> [String: Any] {
     let handler = VNImageRequestHandler(cgImage: cg, options: [:])
     let classify = VNClassifyImageRequest()
     let ocr = VNRecognizeTextRequest()
-    // .fast is CPU-based (so it parallelizes across cores) and much quicker than
-    // .accurate, while still reading clear text well enough for search.
-    ocr.recognitionLevel = .fast
-    ocr.usesLanguageCorrection = false
+    // .accurate is best for text but ANE-bound (serializes); .fast is CPU-based
+    // (parallelizes) and much quicker. Chosen via the app's setting.
+    ocr.recognitionLevel = fastOCR ? .fast : .accurate
+    ocr.usesLanguageCorrection = !fastOCR
 
     var labels: [[String: Any]] = []
     var text = ""

@@ -605,6 +605,50 @@ fn set_favorite(id: i64, favorite: bool, state: State<AppState>) -> Result<(), S
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct Settings {
+    vision_quality: String, // "accurate" | "fast"
+}
+
+#[tauri::command]
+fn get_settings(state: State<AppState>) -> Result<Settings, String> {
+    let conn = state.db.lock().unwrap();
+    let vision_quality = conn
+        .query_row("SELECT v FROM meta WHERE k='vision_quality'", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap_or_else(|_| "accurate".into());
+    Ok(Settings { vision_quality })
+}
+
+/// Change the analysis (OCR) quality and re-analyze photos with the new setting.
+#[tauri::command]
+fn set_vision_quality(
+    quality: String,
+    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let q = if quality == "fast" { "fast" } else { "accurate" };
+    {
+        let conn = state.db.lock().unwrap();
+        conn.execute(
+            "INSERT INTO meta(k,v) VALUES('vision_quality',?1)
+             ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+            [q],
+        )
+        .map_err(e2s)?;
+        // Re-run analysis for all images under the new quality.
+        conn.execute("UPDATE assets SET vision_done=0 WHERE kind='image'", [])
+            .map_err(e2s)?;
+    }
+    let root = state.root.lock().unwrap().clone();
+    if let Some(r) = root {
+        start_indexing(&state, &app, r);
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct PlaceCity {
     city: String,
     count: i64,
@@ -857,12 +901,21 @@ fn main() {
                 true,
                 Some("CmdOrCtrl+O"),
             )?;
+            let settings_item = MenuItem::with_id(
+                app,
+                "settings",
+                "Settings…",
+                true,
+                Some("CmdOrCtrl+,"),
+            )?;
             let app_menu = Submenu::with_items(
                 app,
                 "App",
                 true,
                 &[
                     &PredefinedMenuItem::about(app, None, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &settings_item,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::hide(app, None)?,
                     &PredefinedMenuItem::quit(app, None)?,
@@ -933,10 +986,14 @@ fn main() {
             }
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            if event.id() == "open-folder" {
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open-folder" => {
                 let _ = app.emit("menu-open-folder", ());
             }
+            "settings" => {
+                let _ = app.emit("menu-settings", ());
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             set_root,
@@ -956,6 +1013,8 @@ fn main() {
             set_favorite,
             get_places,
             list_place_assets,
+            get_settings,
+            set_vision_quality,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
