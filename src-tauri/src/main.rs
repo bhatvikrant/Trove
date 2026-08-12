@@ -689,6 +689,134 @@ fn set_store_in_folder(enabled: bool, state: State<AppState>) -> Result<(), Stri
     Ok(())
 }
 
+/// Escape a string for use as the literal prefix of a SQL `LIKE ... ESCAPE '\'`
+/// pattern, so folder paths containing `%` or `_` match only themselves.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+/// Reset all Trove-specific data for the currently open folder: delete its
+/// portable `.trove` sidecar, drop this folder's durable favorites and face
+/// names, and re-index from scratch (so analysis is re-derived). The media
+/// files themselves are never touched.
+#[tauri::command]
+fn reset_folder(state: State<AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    let root = state
+        .root
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("No folder is open")?;
+
+    // Remove the hidden portable sidecar (curation.json + analysis.db) that
+    // Trove keeps inside the folder.
+    let sidecar_dir = sidecar::dir(&root);
+    if sidecar_dir.exists() {
+        std::fs::remove_dir_all(&sidecar_dir).map_err(e2s)?;
+    }
+
+    {
+        let conn = state.db.lock().unwrap();
+        // Drop durable, path-keyed curation for files under this folder only,
+        // leaving any other folder's favorites/names alone.
+        let prefix = format!("{}/%", escape_like(&root.to_string_lossy()));
+        conn.execute(
+            "DELETE FROM favorites WHERE path LIKE ?1 ESCAPE '\\'",
+            [&prefix],
+        )
+        .map_err(e2s)?;
+        conn.execute(
+            "DELETE FROM named_faces WHERE path LIKE ?1 ESCAPE '\\'",
+            [&prefix],
+        )
+        .map_err(e2s)?;
+        // Clear the live per-folder state so the UI updates immediately, before
+        // the re-index / re-analysis finishes. (assets/faces hold only the open
+        // folder; both are rebuilt by the re-index that follows.)
+        conn.execute("UPDATE assets SET favorite = 0", [])
+            .map_err(e2s)?;
+        conn.execute("DELETE FROM people", []).map_err(e2s)?;
+    }
+
+    // Rebuild from scratch. With the sidecar gone and this folder's durable
+    // curation cleared, nothing is reattached — a clean slate — and analysis is
+    // re-derived in the background.
+    start_indexing(&state, &app, root);
+    Ok(())
+}
+
+/// Reset a single Trove feature's data, leaving everything else intact. Used by
+/// the granular controls in the Danger zone. Media files are never touched.
+///
+/// - `faces`      — clear every name assigned to people (detected faces remain)
+/// - `favorites`  — unstar everything
+/// - `occasions`  — delete all saved occasions
+/// - `slideshows` — delete all saved slideshow presets
+/// - `recents`    — clear the recently-opened-folders list
+#[tauri::command]
+fn reset_feature(feature: String, state: State<AppState>) -> Result<(), String> {
+    {
+        let conn = state.db.lock().unwrap();
+        match feature.as_str() {
+            "faces" => {
+                // Drop the durable, path-keyed names and clear the live labels so
+                // the People view updates immediately. Clusters/faces are kept.
+                conn.execute("DELETE FROM named_faces", []).map_err(e2s)?;
+                conn.execute("UPDATE people SET name = NULL", []).map_err(e2s)?;
+            }
+            "favorites" => {
+                conn.execute("DELETE FROM favorites", []).map_err(e2s)?;
+                conn.execute("UPDATE assets SET favorite = 0", [])
+                    .map_err(e2s)?;
+            }
+            "occasions" => {
+                conn.execute("DELETE FROM special_dates", []).map_err(e2s)?;
+            }
+            "slideshows" => {
+                conn.execute("DELETE FROM slideshow_presets", [])
+                    .map_err(e2s)?;
+            }
+            "recents" => {
+                conn.execute("DELETE FROM recents", []).map_err(e2s)?;
+            }
+            other => return Err(format!("Unknown feature: {other}")),
+        }
+    }
+    // Favorites and names live in the open folder's portable sidecar too; rewrite
+    // it so the reset carries to the folder (no-op when disabled / no folder).
+    if matches!(feature.as_str(), "faces" | "favorites") {
+        sync_sidecar(state.inner(), false);
+    }
+    Ok(())
+}
+
+/// Reset app-wide settings and data to their defaults: clears preferences
+/// (analysis quality, portable-data toggle), the recents list, saved
+/// slideshows, and saved occasions, then closes the current folder. Media files
+/// and any in-folder `.trove` data are left untouched; per-folder curation is
+/// reset by `reset_folder`, not here.
+#[tauri::command]
+fn reset_app(state: State<AppState>) -> Result<(), String> {
+    {
+        let conn = state.db.lock().unwrap();
+        conn.execute_batch(
+            "DELETE FROM meta WHERE k IN ('vision_quality','sidecar_enabled','root','index_ver');
+             DELETE FROM recents;
+             DELETE FROM slideshow_presets;
+             DELETE FROM special_dates;
+             DELETE FROM assets;
+             DELETE FROM faces;
+             DELETE FROM asset_labels;
+             DELETE FROM people;",
+        )
+        .map_err(e2s)?;
+    }
+    // Forget the open folder and supersede any in-flight indexing.
+    *state.root.lock().unwrap() = None;
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    Ok(())
+}
+
 /// Change the analysis (OCR) quality and re-analyze photos with the new setting.
 #[tauri::command]
 fn set_vision_quality(
@@ -1588,6 +1716,9 @@ fn main() {
             get_settings,
             set_vision_quality,
             set_store_in_folder,
+            reset_folder,
+            reset_feature,
+            reset_app,
             get_people,
             list_person_assets,
             rename_person,

@@ -1619,6 +1619,123 @@ body.dragging-face * {
   border-radius: 4px;
 }
 
+/* ---------- Danger zone ---------- */
+.settings-nav-item.danger {
+  color: #e5484d;
+}
+.settings-nav-item.danger:hover {
+  background: rgba(229, 72, 77, 0.1);
+}
+.settings-nav-item.danger.active {
+  background: rgba(229, 72, 77, 0.14);
+  color: #e5484d;
+}
+.settings-nav-item.danger.active svg {
+  opacity: 1;
+}
+.danger-title {
+  color: #e5484d;
+}
+.danger-group-title {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.danger-group-title:first-of-type {
+  margin-top: 4px;
+}
+.danger-row {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px 13px;
+  margin-bottom: 8px;
+}
+.danger-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.danger-row-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.danger-row-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.danger-row-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.danger-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.danger-confirm {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(229, 72, 77, 0.45);
+  border-radius: 8px;
+  background: rgba(229, 72, 77, 0.07);
+}
+.danger-warning {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.danger-warning code,
+.danger-hint code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--hover);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.danger-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.danger-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--mono);
+}
+.danger-input:focus-visible {
+  outline: 2px solid #e5484d;
+  outline-offset: -1px;
+  border-color: #e5484d;
+}
+.danger-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+.btn.danger.solid {
+  background: #e5484d;
+  border-color: #e5484d;
+  color: white;
+}
+.btn.danger.solid:hover:not(:disabled) {
+  background: #d93b40;
+  border-color: #d93b40;
+}
+
 /* ---------- Drag-and-drop overlay ---------- */
 .drop-overlay {
   position: absolute;

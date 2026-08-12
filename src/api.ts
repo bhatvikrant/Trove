@@ -87,6 +87,37 @@ export async function rescan(): Promise<void> {
   await invoke("rescan");
 }
 
+/**
+ * Reset all Trove-specific data for the open folder: delete its portable
+ * `.trove` sidecar, drop this folder's favorites and face names, and re-index
+ * from scratch. The media files themselves are untouched.
+ */
+export async function resetFolder(): Promise<void> {
+  await invoke("reset_folder");
+}
+
+/** A single Trove feature whose data can be reset independently. */
+export type ResettableFeature =
+  | "faces"
+  | "favorites"
+  | "occasions"
+  | "slideshows"
+  | "recents";
+
+/** Reset one feature's data (e.g. clear all face names), leaving the rest. */
+export async function resetFeature(feature: ResettableFeature): Promise<void> {
+  await invoke("reset_feature", { feature });
+}
+
+/**
+ * Reset app-wide settings and data to defaults: preferences, recents, saved
+ * slideshows, and occasions, and close the current folder. Media files and any
+ * in-folder `.trove` data are untouched.
+ */
+export async function resetApp(): Promise<void> {
+  await invoke("reset_app");
+}
+
 /** Aggregated year→month→day→kind counts, within the active filter. */
 export async function getDateTree(filter?: AssetFilter): Promise<DateTree> {
   return invoke("get_date_tree", { filter: filter ?? null });

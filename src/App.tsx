@@ -665,6 +665,7 @@ export default function App() {
           <EmptyState
             onPickFolder={handlePickFolder}
             onOpen={openFolderPath}
+            refreshToken={dataVersion}
           />
         )}
       </div>
@@ -688,7 +689,35 @@ export default function App() {
         </div>
       )}
 
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          root={root}
+          onFolderReset={() => {
+            // The folder is re-indexing from scratch; clear derived views and
+            // show the progress bar. Index events refresh the tree as it runs.
+            setSelected(null);
+            setPeople(null);
+            setPlaces(null);
+            setDataVersion((v) => v + 1);
+            setProgress({ scanned: 0, indexed: 0, total: null, done: false });
+          }}
+          onFeatureReset={(feature) => {
+            // Reflect the reset in the live views without a full re-index.
+            setDataVersion((v) => v + 1);
+            if (feature === "favorites") {
+              setSelected((cur) => (cur ? { ...cur, favorite: false } : cur));
+            } else if (feature === "faces") {
+              setPeople((ps) =>
+                ps ? ps.map((p) => ({ ...p, name: null })) : ps
+              );
+            } else if (feature === "occasions") {
+              setOccasions([]);
+            }
+          }}
+          onAppReset={handleHome}
+        />
+      )}
 
       {slideshowSetup && (
         <SlideshowSetup

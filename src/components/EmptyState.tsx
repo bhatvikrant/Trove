@@ -50,16 +50,18 @@ function Logo() {
 interface Props {
   onPickFolder: () => void;
   onOpen: (path: string) => void;
+  /** Bumped to re-fetch recents (e.g. after they're reset in Settings). */
+  refreshToken?: number;
 }
 
-export function EmptyState({ onPickFolder, onOpen }: Props) {
+export function EmptyState({ onPickFolder, onOpen, refreshToken }: Props) {
   const [recents, setRecents] = useState<RecentFolder[]>([]);
   const [quick, setQuick] = useState<QuickLocations>({ standard: [], drives: [] });
 
   useEffect(() => {
     getRecentFolders().then(setRecents).catch(() => {});
     getQuickLocations().then(setQuick).catch(() => {});
-  }, []);
+  }, [refreshToken]);
 
   const handleRemove = useCallback(async (path: string) => {
     try {
