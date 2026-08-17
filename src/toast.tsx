@@ -10,6 +10,14 @@ export interface ToastOptions {
   action?: ToastAction;
   /** Auto-dismiss delay in ms. 0 keeps it until dismissed. Default 3000. */
   duration?: number;
+  /**
+   * Called when the toast is pushed off the bottom of the stack by newer ones,
+   * rather than timing out or being dismissed. Its offer never got its full
+   * time on screen, so a caller holding something open behind it — an undoable
+   * delete, say — should settle it now rather than leave it hanging on a
+   * countdown nobody can see.
+   */
+  onEvict?: () => void;
 }
 
 interface Toast extends ToastOptions {
@@ -44,12 +52,15 @@ export function showToast(message: string, opts: ToastOptions = {}): number {
   const duration = opts.duration ?? 3000;
   toasts = [...toasts, { id, message, ...opts, duration }];
   // Keep the stack shallow: drop the oldest when it grows past the cap.
+  const evicted: Toast[] = [];
   while (toasts.length > MAX_TOASTS) {
     const dropped = toasts[0];
     toasts = toasts.slice(1);
     clearTimer(dropped.id);
+    evicted.push(dropped);
   }
   emit();
+  for (const t of evicted) t.onEvict?.();
   if (duration > 0) {
     timers.set(id, window.setTimeout(() => dismissToast(id), duration));
   }

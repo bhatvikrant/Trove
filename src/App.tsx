@@ -89,6 +89,9 @@ function runLabel(
   return "Analyzing…";
 }
 
+/** How long a delete stays undoable before the file actually goes to Trash. */
+const UNDO_MS = 6000;
+
 /** Optimistic progress shown between asking for a scan and the first event. */
 const pendingIndex = (root: string): IndexProgress => ({
   runId: 0,
@@ -147,13 +150,13 @@ export default function App() {
   const [fullscreen, setFullscreen] = useState(false);
   // Asset ids hidden from the tree while their deletion is pending undo.
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
-  // The delete awaiting the undo window: the asset, its commit timer, and the
-  // id of the "Moved to Trash" toast so it can be dismissed on undo.
-  const pendingRef = useRef<{
-    asset: Asset;
-    timer: number;
-    toastId: number;
-  } | null>(null);
+  // Deletes awaiting their undo window, by asset id. Several can be in flight
+  // at once — clearing out a handful of files in a row shouldn't make each
+  // delete cut the previous one's undo short — and each keeps its own commit
+  // timer and the id of its "Moved to Trash" toast so undo can dismiss it.
+  const pendingRef = useRef(
+    new Map<number, { asset: Asset; timer: number; toastId: number }>()
+  );
 
   const handleRename = useCallback(
     async (asset: Asset, newName: string) => {
@@ -260,16 +263,16 @@ export default function App() {
 
   // Delete is optimistic + undoable: hide the row immediately, show a toast,
   // and only move the file to the Trash once the undo window elapses.
-  // Cancel the pending delete and bring the row back.
-  const handleUndo = useCallback(() => {
-    const pending = pendingRef.current;
+  // Cancel one pending delete and bring its row back.
+  const handleUndo = useCallback((id: number) => {
+    const pending = pendingRef.current.get(id);
     if (!pending) return;
     clearTimeout(pending.timer);
     dismissToast(pending.toastId);
-    pendingRef.current = null;
+    pendingRef.current.delete(id);
     setHiddenIds((prev) => {
       const n = new Set(prev);
-      n.delete(pending.asset.id);
+      n.delete(id);
       return n;
     });
     setSelected(pending.asset);
@@ -277,44 +280,52 @@ export default function App() {
 
   const handleDelete = useCallback(
     (asset: Asset) => {
-      // Flush any still-pending delete before starting a new one.
-      if (pendingRef.current) {
-        clearTimeout(pendingRef.current.timer);
-        dismissToast(pendingRef.current.toastId);
-        commitDelete(pendingRef.current.asset);
-        pendingRef.current = null;
-      }
-      // Pick a neighbour to select next, before the row disappears.
+      const pending = pendingRef.current;
+      // Pick a neighbour to select next, before the row disappears. Skip the
+      // ones already on their way out, or deleting a run of files would land
+      // the selection on a row that isn't there any more.
       const idx = visibleAssets.findIndex((a) => a.id === asset.id);
-      const nextSel = visibleAssets[idx + 1] ?? visibleAssets[idx - 1] ?? null;
+      const nextLive = (from: number, step: number) => {
+        for (let i = from; i >= 0 && i < visibleAssets.length; i += step) {
+          const a = visibleAssets[i];
+          if (a.id !== asset.id && !pending.has(a.id)) return a;
+        }
+        return null;
+      };
+      const nextSel =
+        idx < 0 ? null : nextLive(idx + 1, 1) ?? nextLive(idx - 1, -1);
       setHiddenIds((prev) => new Set(prev).add(asset.id));
-      setSelected((cur) =>
-        cur && cur.id === asset.id
-          ? nextSel && nextSel.id !== asset.id
-            ? nextSel
-            : null
-          : cur
-      );
+      setSelected((cur) => (cur && cur.id === asset.id ? nextSel : cur));
       const timer = window.setTimeout(() => {
-        pendingRef.current = null;
+        pending.delete(asset.id);
         commitDelete(asset);
-      }, 6000);
+      }, UNDO_MS);
       const toastId = showToast(`Moved “${asset.name}” to Trash`, {
-        action: { label: "Undo", onClick: handleUndo },
-        duration: 6000,
+        action: { label: "Undo", onClick: () => handleUndo(asset.id) },
+        duration: UNDO_MS,
+        // Pushed off the stack early: the undo is no longer on offer, so don't
+        // leave the file in limbo on a countdown nobody can see.
+        onEvict: () => {
+          if (!pending.has(asset.id)) return;
+          clearTimeout(timer);
+          pending.delete(asset.id);
+          commitDelete(asset);
+        },
       });
-      pendingRef.current = { asset, timer, toastId };
+      pending.set(asset.id, { asset, timer, toastId });
     },
     [visibleAssets, commitDelete, handleUndo]
   );
 
-  // Commit any pending delete if the app unmounts.
+  // Commit anything still pending if the app unmounts.
   useEffect(() => {
+    const pending = pendingRef.current;
     return () => {
-      if (pendingRef.current) {
-        clearTimeout(pendingRef.current.timer);
-        deleteAsset(pendingRef.current.asset.path).catch(() => {});
+      for (const p of pending.values()) {
+        clearTimeout(p.timer);
+        deleteAsset(p.asset.path).catch(() => {});
       }
+      pending.clear();
     };
   }, []);
 
