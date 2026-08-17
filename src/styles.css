@@ -1370,6 +1370,45 @@ body.dragging-face * {
 }
 .open-card-ico {
   font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+}
+/* The folder being indexed in the background, while the user is on this screen. */
+.open-card.indexing {
+  border-color: var(--accent);
+}
+.open-card-bar {
+  display: block;
+  height: 2px;
+  margin-top: 5px;
+  border-radius: 1px;
+  background: var(--border);
+  overflow: hidden;
+}
+.open-card-bar .bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.open-card-bar.indeterminate .bar {
+  width: 40%;
+  animation: statusbar-indeterminate 1.1s ease-in-out infinite;
+}
+.open-card-stop {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  border-radius: 5px;
+  font-size: 11px;
+}
+.open-card-stop:hover {
+  border-color: #e5484d;
+  color: #e5484d;
 }
 .open-card-body {
   flex: 1;
@@ -1619,6 +1658,87 @@ body.dragging-face * {
   border-radius: 4px;
 }
 
+/* ---------- Where the data lives ---------- */
+.set-group-title {
+  margin: 20px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.set-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.set-path {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+.set-path-head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 7px;
+}
+.set-path-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+.set-path-hint {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+/* The path itself: a full-width target that opens it in Finder. */
+.set-path-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-dim);
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.set-path-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.set-path-btn:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+/* Wraps rather than truncates: a path the user can't read in full is no use,
+   and these are only ever a line or two. */
+.set-path-value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.set-path-btn svg {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+.set-path-absent,
+.set-path-none {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.set-path-none {
+  margin: 0;
+}
+
 /* ---------- Danger zone ---------- */
 .settings-nav-item.danger {
   color: #e5484d;
@@ -1783,20 +1903,100 @@ body.dragging-face * {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+/* Sharing the bar with the folder name means the status text is the part that
+   gives way on a narrow window: the lopsided shrink factor makes it absorb
+   effectively all of the squeeze before the folder name loses a character. */
 .statusbar-item {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 100 auto;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.statusbar-label,
+.statusbar-idle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The open folder, at the head of the bar. Brighter than the status text next
+   to it, so it reads as the label for everything that follows. */
+.statusbar-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  margin-left: -5px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11.5px;
+  transition: background 0.12s, color 0.12s;
+}
+.statusbar-folder:hover {
+  background: var(--hover);
+}
+.statusbar-folder svg {
+  flex: 0 0 auto;
+  opacity: 0.65;
+}
+.statusbar-folder span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A hairline between the folder and the status text, with equal air either
+   side (the parent's gap sits to its left, this margin to its right). */
+.statusbar-folder + .statusbar-item::before {
+  content: "";
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 1px;
+  margin: 6px 4px 6px 0;
+  background: var(--border);
+}
+/* The timer and percentage are short and must stay whole — only the status
+   text gives way when the bar runs out of room. */
 .statusbar-pct {
+  flex: 0 0 auto;
   margin-left: auto;
   color: var(--text-faint);
 }
 .statusbar-idle {
   color: var(--text-faint);
+}
+/* Stop the run in flight; sits next to the "Indexing…" text it interrupts. */
+.statusbar-stop {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.statusbar-stop:hover {
+  border-color: #e5484d;
+  color: #e5484d;
+}
+/* Live elapsed time for the run in flight; sits at the right, before the %. */
+.statusbar-elapsed {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.statusbar-elapsed + .statusbar-pct {
+  margin-left: 0;
 }
 /* Thin progress line pinned to the top edge of the bar while indexing. */
 .statusbar-progress {

@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  getDataLocations,
   getSettings,
+  openInFinder,
   resetApp,
   resetFeature,
   resetFolder,
@@ -8,7 +10,8 @@ import {
   setVisionQuality,
 } from "../api";
 import type { ResettableFeature } from "../api";
-import type { VisionQuality } from "../types";
+import type { DataLocation, DataLocations, VisionQuality } from "../types";
+import { folderName } from "../paths";
 import { showToast } from "../toast";
 
 type SectionId = "analysis" | "storage" | "danger";
@@ -67,6 +70,7 @@ export function SettingsModal({
   // `null` until the saved setting loads, so we don't flash a default.
   const [quality, setQuality] = useState<VisionQuality | null>(null);
   const [storeInFolder, setStoreInFolderState] = useState<boolean | null>(null);
+  const [locations, setLocations] = useState<DataLocations | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,6 +81,12 @@ export function SettingsModal({
       })
       .catch(() => {});
   }, []);
+
+  const refreshLocations = useCallback(() => {
+    getDataLocations().then(setLocations).catch(() => setLocations(null));
+  }, []);
+
+  useEffect(refreshLocations, [refreshLocations]);
 
   // Move focus into the dialog on open and restore it to the trigger on close.
   useEffect(() => {
@@ -127,6 +137,9 @@ export function SettingsModal({
   const toggleStore = (next: boolean) => {
     setStoreInFolderState(next);
     setStoreInFolder(next).catch(() => {});
+    // Enabling writes the sidecar on a background thread, so the folder isn't
+    // there yet — look again shortly so its path stops reading as missing.
+    if (next) window.setTimeout(refreshLocations, 800);
     showToast(
       next
         ? "Trove will store its data inside the folder"
@@ -242,6 +255,28 @@ export function SettingsModal({
                     </span>
                   </span>
                 </label>
+
+                <h4 className="set-group-title">Where the data lives</h4>
+                <div className="set-paths">
+                  <PathRow
+                    label="In this folder"
+                    hint="Favorites, names, and cached analysis — travels with the folder"
+                    location={locations?.folder ?? null}
+                    absentNote={
+                      !root
+                        ? "Open a folder to see this."
+                        : storeInFolder
+                          ? "Not written yet — created once analysis finishes."
+                          : "Turn the switch above on to create it."
+                    }
+                  />
+                  <PathRow
+                    label="On this Mac"
+                    hint="The index and thumbnail cache Trove builds for every folder"
+                    location={locations?.app ?? null}
+                    absentNote="Not created yet."
+                  />
+                </div>
               </section>
             )}
 
@@ -405,10 +440,72 @@ export function SettingsModal({
   );
 }
 
-/** The folder's display name (last path segment) from an absolute path. */
-function folderName(path: string): string {
-  const parts = path.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? path;
+/**
+ * One data location: its full path, clickable to open in Finder. A location
+ * that doesn't exist yet still shows its path — that's where it would go — but
+ * can't be opened.
+ */
+function PathRow({
+  label,
+  hint,
+  location,
+  absentNote,
+}: {
+  label: string;
+  hint: string;
+  location: DataLocation | null;
+  absentNote: string;
+}) {
+  const open = async () => {
+    if (!location?.exists) return;
+    try {
+      await openInFinder(location.path);
+    } catch (e) {
+      showToast(String(e), { kind: "error" });
+    }
+  };
+
+  return (
+    <div className="set-path">
+      <div className="set-path-head">
+        <span className="set-path-label">{label}</span>
+        <span className="set-path-hint">{hint}</span>
+      </div>
+      {location ? (
+        <button
+          className="set-path-btn"
+          disabled={!location.exists}
+          title={
+            location.exists ? `Open ${location.path} in Finder` : location.path
+          }
+          onClick={open}
+        >
+          <span className="set-path-value">{location.display}</span>
+          {location.exists ? (
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 4h6v6" />
+              <path d="M20 4l-8 8" />
+              <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+            </svg>
+          ) : (
+            <span className="set-path-absent">{absentNote}</span>
+          )}
+        </button>
+      ) : (
+        <p className="set-path-none">{absentNote}</p>
+      )}
+    </div>
+  );
 }
 
 /**

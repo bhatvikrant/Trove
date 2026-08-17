@@ -18,10 +18,14 @@ import { SlideshowSetup } from "./components/SlideshowSetup";
 import { SlideshowPlayer } from "./components/SlideshowPlayer";
 import { OccasionsView } from "./components/OccasionsView";
 import { OccasionsSidebar } from "./components/OccasionsSidebar";
+import { folderName } from "./paths";
 import { showToast, dismissToast, Toaster } from "./toast";
 import {
+  cancelIndexing,
   deleteAsset,
   getDateTree,
+  getIndexStatus,
+  getLastAnalysis,
   getPeople,
   getPlaces,
   addSpecialDate,
@@ -29,6 +33,8 @@ import {
   listSpecialDates,
   listSlideshowAssets,
   mergePeople,
+  onAnalysisDone,
+  onIndexCancelled,
   onIndexProgress,
   onMenuOpenFolder,
   onMenuSettings,
@@ -43,10 +49,12 @@ import {
 import {
   DEFAULT_SLIDESHOW_CONFIG,
   EMPTY_FILTER,
+  type AnalysisRun,
   type Asset,
   type AssetFilter,
   type DateTree as DateTreeData,
   type IndexProgress,
+  type IndexStatus,
   type Lens,
   type Person,
   type Places,
@@ -56,9 +64,51 @@ import {
   type VisionProgress,
 } from "./types";
 
+/**
+ * How a run in flight describes itself. Shared by the status bar and the
+ * welcome screen's folder tile so the two can't drift apart.
+ *
+ * The index pass has two halves that report different numbers: the walk only
+ * moves `scanned` and doesn't know the total until it ends, and the metadata
+ * pass then climbs `indexed` towards it. Reading `indexed` during the walk is
+ * how this said "0 assets" for the whole of a long scan.
+ */
+function runLabel(
+  progress: IndexProgress | null,
+  vision: VisionProgress | null
+): string {
+  if (vision) {
+    return `Analyzing photos… ${vision.processed.toLocaleString()} of ${vision.total.toLocaleString()}`;
+  }
+  if (progress && !progress.done) {
+    return progress.total
+      ? `Indexing… ${progress.indexed.toLocaleString()} of ${progress.total.toLocaleString()} assets`
+      : `Scanning… ${progress.scanned.toLocaleString()} assets found`;
+  }
+  // Between the two passes neither reports, but the run is still going.
+  return "Analyzing…";
+}
+
+/** Optimistic progress shown between asking for a scan and the first event. */
+const pendingIndex = (root: string): IndexProgress => ({
+  runId: 0,
+  root,
+  elapsedMs: 0,
+  scanned: 0,
+  indexed: 0,
+  total: null,
+  done: false,
+});
+
 export default function App() {
   const [root, setRootPath] = useState<string | null>(null);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
+  // The folder the run in flight belongs to, or null when nothing is indexing.
+  // Deliberately separate from `root`: indexing keeps going after the user
+  // returns to the welcome screen, and starts before a folder is open when a
+  // launch resumes the last one — in both cases this is the only handle the UI
+  // has on which recent-folder tile the progress belongs to.
+  const [indexRoot, setIndexRoot] = useState<string | null>(null);
   const [filter, setFilter] = useState<AssetFilter>(EMPTY_FILTER);
   const [lens, setLens] = useState<Lens>("date");
   const [places, setPlaces] = useState<Places | null>(null);
@@ -67,6 +117,12 @@ export default function App() {
   const [focusPerson, setFocusPerson] = useState<{ clusterId: number } | null>(null);
   const [tree, setTree] = useState<DateTreeData | null>(null);
   const [vision, setVision] = useState<VisionProgress | null>(null);
+  // Analysis timing: when the run in flight started (wall clock, null when
+  // nothing is running), how long it has been going, and the last run that
+  // finished — the latter comes from the db, so it outlives the session.
+  const [runStart, setRunStart] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [lastAnalysis, setLastAnalysis] = useState<AnalysisRun | null>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
   const [sidebarW, setSidebarW] = useState(340);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -262,12 +318,156 @@ export default function App() {
     };
   }, []);
 
+  // The run whose clock is on screen. Progress events carry the backend's own
+  // elapsed time, so the timer starts from the right place even if the UI only
+  // hears about a run that has been going for a while.
+  const runIdRef = useRef<number | null>(null);
+  // A run the user stopped. Its worker notices at its next checkpoint, so a
+  // straggler event can still arrive; events tagged with it are ignored.
+  const stoppedRunRef = useRef<number | null>(null);
+  // The newest run this screen has heard from. Run ids only ever increase, so
+  // anything below it belongs to a run that has already been superseded — its
+  // late events must not put the folder it was scanning back on screen.
+  const newestRunRef = useRef(0);
+  const indexRootRef = useRef<string | null>(null);
+  indexRootRef.current = indexRoot;
+
+  /** True for an event from a run that was stopped or already superseded. */
+  const staleEvent = useCallback((runId: number) => {
+    if (runId === stoppedRunRef.current || runId < newestRunRef.current) return true;
+    newestRunRef.current = runId;
+    return false;
+  }, []);
+  /** Start the clock the moment the user asks for a scan, before the first event. */
+  const beginClock = useCallback(() => {
+    runIdRef.current = null;
+    setRunStart(Date.now());
+    setElapsedMs(0);
+  }, []);
+  const startClock = useCallback((runId: number, elapsed: number) => {
+    if (runIdRef.current === runId) return; // same run: keep ticking locally
+    runIdRef.current = runId;
+    setRunStart(Date.now() - elapsed);
+    setElapsedMs(elapsed);
+  }, []);
+
+  /** Forget the run in flight — it finished, was stopped, or never started. */
+  const clearRun = useCallback(() => {
+    setIndexRoot(null);
+    setProgress(null);
+    setVision(null);
+    setRunStart(null);
+    runIdRef.current = null;
+  }, []);
+
+  // Tick the elapsed time while a run is in flight.
+  useEffect(() => {
+    if (runStart === null) return;
+    const tick = () => setElapsedMs(Date.now() - runStart);
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => window.clearInterval(id);
+  }, [runStart]);
+
+  // A run finished: stop the clock and keep how long it took. The run may well
+  // belong to a folder that isn't on screen, so only that folder's own status
+  // bar picks up the duration.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    onAnalysisDone((r) => {
+      if (staleEvent(r.runId)) return;
+      setRunStart(null);
+      setVision(null);
+      setIndexRoot((cur) => (cur === r.root ? null : cur));
+      if (r.root === rootRef.current) {
+        setLastAnalysis({ durationMs: r.durationMs, finishedAt: r.finishedAt });
+      }
+    }).then((fn) => (un = fn));
+    return () => un?.();
+  }, [staleEvent]);
+
+  // A run was stopped before it finished (the user pressed Stop, or the app
+  // closed the folder out from under it).
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    onIndexCancelled((c) => {
+      stoppedRunRef.current = c.runId;
+      clearRun();
+    }).then((fn) => (un = fn));
+    return () => un?.();
+  }, [clearRun]);
+
+  /** Show a run that was already going when this screen started listening. */
+  const adoptStatus = useCallback(
+    (s: IndexStatus) => {
+      setIndexRoot(s.root);
+      startClock(s.runId, s.elapsedMs);
+      setProgress({
+        runId: s.runId,
+        root: s.root,
+        elapsedMs: s.elapsedMs,
+        scanned: s.scanned,
+        indexed: s.indexed,
+        total: s.total,
+        done: s.phase === "analyzing",
+      });
+      setVision(
+        s.phase === "analyzing"
+          ? {
+              runId: s.runId,
+              root: s.root,
+              elapsedMs: s.elapsedMs,
+              processed: s.processed,
+              total: s.visionTotal,
+              done: false,
+            }
+          : null
+      );
+    },
+    [startClock]
+  );
+
+  // Indexing outlives the screen that started it, so on mount ask what's already
+  // running rather than waiting for the next event — at launch the backend
+  // resumes the last folder before this app ever renders.
+  useEffect(() => {
+    let dropped = false;
+    getIndexStatus()
+      .then((s) => {
+        if (dropped || !s || indexRootRef.current) return;
+        adoptStatus(s);
+      })
+      .catch(() => {});
+    return () => {
+      dropped = true;
+    };
+  }, [adoptStatus]);
+
+  // Show the folder's stored analysis time until this session's run replaces it.
+  useEffect(() => {
+    if (!root) {
+      setLastAnalysis(null);
+      return;
+    }
+    getLastAnalysis()
+      .then(setLastAnalysis)
+      .catch(() => setLastAnalysis(null));
+  }, [root]);
+
   // Subscribe to indexing progress; refresh the tree as items stream in.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let lastRefresh = 0;
     onIndexProgress((p) => {
+      if (staleEvent(p.runId)) return;
       setProgress(p);
+      // `done` here only ends the index pass — photo analysis follows, and the
+      // run isn't over until `analysis-done`.
+      setIndexRoot(p.root);
+      startClock(p.runId, p.elapsedMs);
+      // The tree is only on screen for the open folder; a run for anything else
+      // (or none, on the welcome screen) has nothing to refresh.
+      if (p.root !== rootRef.current) return;
       const now = performance.now();
       // Throttle live refreshes while scanning; always refresh on completion.
       if (p.done || now - lastRefresh > 700) {
@@ -276,14 +476,19 @@ export default function App() {
       }
     }).then((fn) => (unlisten = fn));
     return () => unlisten?.();
-  }, [refreshTree]);
+  }, [refreshTree, startClock, staleEvent]);
 
   // Track Vision (scene/OCR) enrichment progress.
   useEffect(() => {
     let un: (() => void) | undefined;
-    onVisionProgress((p) => setVision(p.done ? null : p)).then((fn) => (un = fn));
+    onVisionProgress((p) => {
+      if (staleEvent(p.runId)) return;
+      setVision(p.done ? null : p);
+      setIndexRoot(p.root);
+      startClock(p.runId, p.elapsedMs);
+    }).then((fn) => (un = fn));
     return () => un?.();
-  }, []);
+  }, [startClock, staleEvent]);
 
   // Settings… (⌘,) menu.
   useEffect(() => {
@@ -364,18 +569,30 @@ export default function App() {
   );
 
   // Open a folder by path (also used by recents, quick locations, drag-drop).
-  const openFolderPath = useCallback(async (path: string) => {
-    setSelected(null);
-    setTree(null);
-    setProgress({ scanned: 0, indexed: 0, total: null, done: false });
-    try {
-      const resolved = await setRoot(path);
-      setRootPath(resolved);
-    } catch (e) {
-      setProgress(null);
-      await message(String(e), { title: "Couldn’t open folder", kind: "error" });
-    }
-  }, []);
+  const openFolderPath = useCallback(
+    async (path: string) => {
+      setSelected(null);
+      setTree(null);
+      // Opening the folder that's already indexing in the background attaches to
+      // that run instead of restarting it, so leave its progress and clock alone.
+      const attaching = indexRootRef.current === path;
+      if (!attaching) {
+        setProgress(pendingIndex(path));
+        setVision(null);
+        setIndexRoot(path);
+        beginClock();
+      }
+      try {
+        const resolved = await setRoot(path);
+        setRootPath(resolved);
+        if (!attaching) setIndexRoot(resolved);
+      } catch (e) {
+        if (!attaching) clearRun();
+        await message(String(e), { title: "Couldn’t open folder", kind: "error" });
+      }
+    },
+    [beginClock, clearRun]
+  );
 
   const handlePickFolder = useCallback(async () => {
     const folder = await pickFolder();
@@ -436,10 +653,26 @@ export default function App() {
 
   const handleRescan = useCallback(async () => {
     if (!root) return;
-    setProgress({ scanned: 0, indexed: 0, total: null, done: false });
+    setProgress(pendingIndex(root));
+    setIndexRoot(root);
+    beginClock();
     showToast("Rescanning for changes…");
     await rescan();
-  }, [root]);
+  }, [root, beginClock]);
+
+  /** Stop the background run, whichever folder it belongs to. */
+  const handleCancelIndexing = useCallback(async () => {
+    const target = indexRootRef.current;
+    const name = target ? folderName(target) : null;
+    stoppedRunRef.current = runIdRef.current;
+    clearRun();
+    try {
+      await cancelIndexing();
+      showToast(name ? `Stopped indexing “${name}”` : "Stopped indexing");
+    } catch (e) {
+      await message(String(e), { title: "Couldn’t stop indexing", kind: "error" });
+    }
+  }, [clearRun]);
 
   // Resolve a slideshow config to its items and launch the player.
   const handleStartSlideshow = useCallback(async (config: SlideshowConfig) => {
@@ -512,21 +745,29 @@ export default function App() {
   );
 
   // Return to the welcome screen (keeps the folder indexed for a quick reopen).
+  // Any run in flight deliberately survives this — it keeps going in the
+  // background and reports itself on that folder's tile in the recents list.
   const handleHome = useCallback(() => {
     setRootPath(null);
     setSelected(null);
     setTree(null);
-    setProgress(null);
     setVisibleAssets([]);
     setFilter(EMPTY_FILTER);
     setLens("date");
-    setVision(null);
     setPeople(null);
     setFocusPerson(null);
     setPlaces(null);
   }, []);
 
-  const indexing = !!progress && !progress.done;
+  // Progress belongs to whichever folder the run is for; only the folder on
+  // screen reports it in its own status bar.
+  const showingRun = indexRoot !== null && indexRoot === root;
+  // A run is on the clock until the backend says it finished. This also covers
+  // the handover from indexing to photo analysis, when neither reports yet.
+  const running = showingRun && runStart !== null;
+  // Rescan is only barred during the index pass; photo analysis can be
+  // superseded by one.
+  const indexing = showingRun && !!progress && !progress.done;
 
   const onResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -552,11 +793,27 @@ export default function App() {
 
   const total = tree?.total ?? 0;
 
-  const progressPct = useMemo(() => {
-    if (!progress || progress.done) return 0;
-    if (!progress.total) return null; // indeterminate
-    return Math.min(100, (progress.scanned / progress.total) * 100);
-  }, [progress]);
+  // How far along the run is, across both passes. Null means indeterminate —
+  // the walk can't know its own total until it has finished.
+  const runPct = useMemo(() => {
+    if (vision) {
+      return vision.total > 0
+        ? Math.min(100, (vision.processed / vision.total) * 100)
+        : null;
+    }
+    if (progress && !progress.done && progress.total) {
+      return Math.min(100, (progress.indexed / progress.total) * 100);
+    }
+    return null;
+  }, [progress, vision]);
+
+  const label = useMemo(() => runLabel(progress, vision), [progress, vision]);
+
+  // What the welcome screen shows on the tile of the folder being indexed.
+  const folderIndexing = useMemo(
+    () => (indexRoot ? { root: indexRoot, label, pct: runPct } : null),
+    [indexRoot, label, runPct]
+  );
 
   return (
     <div className={`app${fullscreen ? " fullscreen" : ""}`}>
@@ -666,17 +923,22 @@ export default function App() {
             onPickFolder={handlePickFolder}
             onOpen={openFolderPath}
             refreshToken={dataVersion}
+            indexing={folderIndexing}
+            onCancelIndexing={handleCancelIndexing}
           />
         )}
       </div>
 
       {root && (
         <StatusBar
-          indexing={indexing}
-          progress={progress}
-          progressPct={progressPct}
-          vision={vision}
+          root={root}
+          running={running}
+          label={running ? label : null}
+          pct={runPct}
           total={total}
+          elapsedMs={elapsedMs}
+          lastAnalysis={lastAnalysis}
+          onCancel={handleCancelIndexing}
         />
       )}
 
@@ -700,7 +962,11 @@ export default function App() {
             setPeople(null);
             setPlaces(null);
             setDataVersion((v) => v + 1);
-            setProgress({ scanned: 0, indexed: 0, total: null, done: false });
+            if (root) {
+              setProgress(pendingIndex(root));
+              setIndexRoot(root);
+            }
+            beginClock();
           }}
           onFeatureReset={(feature) => {
             // Reflect the reset in the live views without a full re-index.

@@ -27,6 +27,10 @@ struct AppState {
     root: Mutex<Option<PathBuf>>,
     generation: Arc<AtomicU64>,
     vision_helper: Option<PathBuf>,
+    /// The indexing run in flight, if any. Independent of `root`: a run keeps
+    /// going after the user returns to the welcome screen, and starts before any
+    /// folder is open when a launch resumes the last one.
+    active: indexer::Active,
 }
 
 #[derive(Serialize)]
@@ -184,7 +188,50 @@ fn start_indexing(state: &AppState, app: &tauri::AppHandle, root: PathBuf) {
         state.generation.clone(),
         my_gen,
         state.vision_helper.clone(),
+        state.active.clone(),
     );
+}
+
+/// Abandon the run in flight (if any) and return what it was. Callers that
+/// immediately start a replacement use this; callers that don't should use
+/// `stop_indexing`, which also tells the UI the run is over.
+fn supersede_indexing(state: &AppState) -> Option<indexer::IndexStatus> {
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    state.active.lock().unwrap().take()
+}
+
+/// Stop the run in flight and tell the UI, so its progress disappears instead of
+/// hanging at whatever it last reported. The worker notices at its next
+/// checkpoint; the event doesn't wait for it.
+fn stop_indexing(state: &AppState, app: &tauri::AppHandle) {
+    if let Some(run) = supersede_indexing(state) {
+        let _ = app.emit(
+            "index-cancelled",
+            indexer::Cancelled {
+                run_id: run.run_id,
+                root: run.root,
+            },
+        );
+    }
+}
+
+/// The folder being indexed right now, or None when nothing is.
+#[tauri::command]
+fn get_index_status(state: State<AppState>) -> Result<Option<indexer::IndexStatus>, String> {
+    Ok(state
+        .active
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(indexer::IndexStatus::refreshed))
+}
+
+/// Stop indexing the folder currently being indexed. Whatever was written so far
+/// is kept; opening the folder again re-indexes it from scratch.
+#[tauri::command]
+fn cancel_indexing(state: State<AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    stop_indexing(&state, &app);
+    Ok(())
 }
 
 /// Write the open folder's portable sidecar off the UI thread. `full` also
@@ -234,30 +281,61 @@ fn set_root(
         .unwrap_or(&root_str)
         .to_string();
     let now = now_unix();
-    {
+
+    // Re-opening the folder that's already being indexed in the background just
+    // re-attaches to that run. Wiping and restarting here would throw away the
+    // work the user watched happen on the welcome screen.
+    let resuming = state
+        .active
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|run| run.root == root_str);
+    if resuming {
         let conn = state.db.lock().unwrap();
-        // The per-folder index is rebuilt from scratch. Favorites and face
-        // names live in the durable `favorites` / `named_faces` tables (keyed
-        // by path), so they survive this and get reattached on re-index.
-        conn.execute_batch(
-            "DELETE FROM assets;
-             DELETE FROM faces;
-             DELETE FROM asset_labels;
-             DELETE FROM people;",
-        )
-        .map_err(e2s)?;
-        conn.execute(
-            "INSERT INTO meta(k,v) VALUES('root',?1)
-             ON CONFLICT(k) DO UPDATE SET v=excluded.v",
-            [&root_str],
-        )
-        .map_err(e2s)?;
         conn.execute(
             "INSERT INTO recents(path,name,last_opened,count) VALUES(?1,?2,?3,NULL)
              ON CONFLICT(path) DO UPDATE SET name=excluded.name, last_opened=excluded.last_opened",
             rusqlite::params![root_str, name, now],
         )
-        .map_err(e2s)?;
+        .map_err(db_err)?;
+        drop(conn);
+        *state.root.lock().unwrap() = Some(root);
+        return Ok(root_str);
+    }
+
+    // Supersede any in-flight indexing *before* writing: that run owns the
+    // SQLite write lock in bursts, and it also keeps inserting rows for the old
+    // folder, which would race the clear-out below.
+    supersede_indexing(&state);
+    {
+        let mut conn = state.db.lock().unwrap();
+        // One transaction, so a contended write can't leave the index half
+        // cleared (each statement of a batch commits on its own).
+        let tx = db::write_tx(&mut conn).map_err(db_err)?;
+        // The per-folder index is rebuilt from scratch. Favorites and face
+        // names live in the durable `favorites` / `named_faces` tables (keyed
+        // by path), so they survive this and get reattached on re-index.
+        tx.execute_batch(
+            "DELETE FROM assets;
+             DELETE FROM faces;
+             DELETE FROM asset_labels;
+             DELETE FROM people;",
+        )
+        .map_err(db_err)?;
+        tx.execute(
+            "INSERT INTO meta(k,v) VALUES('root',?1)
+             ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+            [&root_str],
+        )
+        .map_err(db_err)?;
+        tx.execute(
+            "INSERT INTO recents(path,name,last_opened,count) VALUES(?1,?2,?3,NULL)
+             ON CONFLICT(path) DO UPDATE SET name=excluded.name, last_opened=excluded.last_opened",
+            rusqlite::params![root_str, name, now],
+        )
+        .map_err(db_err)?;
+        tx.commit().map_err(db_err)?;
     }
     *state.root.lock().unwrap() = Some(root.clone());
     start_indexing(&state, &app, root);
@@ -387,6 +465,42 @@ fn rescan(state: State<AppState>, app: tauri::AppHandle) -> Result<(), String> {
         }
         None => Err("No folder is open".into()),
     }
+}
+
+/// How long the last completed analysis of a folder took. Persisted per folder,
+/// so it survives quitting the app or switching folders and back.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AnalysisRun {
+    duration_ms: i64,
+    finished_at: i64,
+}
+
+#[tauri::command]
+fn get_last_analysis(state: State<AppState>) -> Result<Option<AnalysisRun>, String> {
+    let Some(root) = state.root.lock().unwrap().clone() else {
+        return Ok(None);
+    };
+    let conn = state.db.lock().unwrap();
+    let row = conn
+        .query_row(
+            "SELECT analysis_ms, analyzed_at FROM recents WHERE path=?1",
+            [root.to_string_lossy().to_string()],
+            |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?,
+                    r.get::<_, Option<i64>>(1)?,
+                ))
+            },
+        )
+        .ok();
+    Ok(match row {
+        Some((Some(duration_ms), Some(finished_at))) => Some(AnalysisRun {
+            duration_ms,
+            finished_at,
+        }),
+        _ => None,
+    })
 }
 
 #[tauri::command]
@@ -623,27 +737,30 @@ fn get_facets(state: State<AppState>) -> Result<Facets, String> {
 
 #[tauri::command]
 fn set_favorite(id: i64, favorite: bool, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock().unwrap();
-    conn.execute(
+    let mut conn = state.db.lock().unwrap();
+    // The live flag and the durable mirror must move together, so: one transaction.
+    let tx = db::write_tx(&mut conn).map_err(db_err)?;
+    tx.execute(
         "UPDATE assets SET favorite = ?1 WHERE id = ?2",
         rusqlite::params![favorite as i64, id],
     )
-    .map_err(e2s)?;
+    .map_err(db_err)?;
     // Mirror into the durable, path-keyed favorites table so the choice
     // survives re-indexing / switching folders.
     if favorite {
-        conn.execute(
+        tx.execute(
             "INSERT OR IGNORE INTO favorites(path) SELECT path FROM assets WHERE id=?1",
             [id],
         )
-        .map_err(e2s)?;
+        .map_err(db_err)?;
     } else {
-        conn.execute(
+        tx.execute(
             "DELETE FROM favorites WHERE path = (SELECT path FROM assets WHERE id=?1)",
             [id],
         )
-        .map_err(e2s)?;
+        .map_err(db_err)?;
     }
+    tx.commit().map_err(db_err)?;
     drop(conn);
     sync_sidecar(state.inner(), false);
     Ok(())
@@ -668,6 +785,101 @@ fn get_settings(state: State<AppState>) -> Result<Settings, String> {
         vision_quality,
         store_in_folder: sidecar::enabled(&conn),
     })
+}
+
+/// One place Trove keeps data on disk, for the Settings panel to name and open.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DataLocation {
+    path: String,
+    /// The same path with the user's home collapsed to `~`, the way Finder
+    /// writes it. Computed here because only the backend knows `$HOME` — a
+    /// frontend guess would shorten *another* user's home just as happily.
+    display: String,
+    /// False for a sidecar that hasn't been written yet — the path is still
+    /// worth showing (it says where it *would* go), just not openable.
+    exists: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DataLocations {
+    /// The portable `.trove` sidecar inside the open folder; None if no folder
+    /// is open.
+    folder: Option<DataLocation>,
+    /// Trove's own store on this Mac: the index database and thumbnail cache.
+    app: DataLocation,
+}
+
+/// Collapse `home` at the front of `full` to `~`. Matches only on a path
+/// boundary: a plain prefix test would render `/Users/vikram` as `~ram` for a
+/// home of `/Users/vik`.
+fn collapse_home(full: &str, home: &str) -> String {
+    let home = home.trim_end_matches('/');
+    if home.is_empty() {
+        return full.to_string();
+    }
+    if full == home {
+        return "~".to_string();
+    }
+    match full.strip_prefix(&format!("{home}/")) {
+        Some(rest) => format!("~/{rest}"),
+        None => full.to_string(),
+    }
+}
+
+fn location(path: PathBuf) -> DataLocation {
+    let full = path.to_string_lossy().to_string();
+    let display = match std::env::var("HOME") {
+        Ok(home) => collapse_home(&full, &home),
+        Err(_) => full.clone(),
+    };
+    DataLocation {
+        exists: path.exists(),
+        path: full,
+        display,
+    }
+}
+
+/// Where the open folder's Trove data is kept — both inside the folder and on
+/// this Mac — so the user can see and open either.
+#[tauri::command]
+fn get_data_locations(state: State<AppState>) -> Result<DataLocations, String> {
+    let folder = state
+        .root
+        .lock()
+        .unwrap()
+        .clone()
+        .map(|root| location(sidecar::dir(&root)));
+    let app_dir = state
+        .db_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| state.db_path.clone());
+    Ok(DataLocations {
+        folder,
+        app: location(app_dir),
+    })
+}
+
+/// Show a path in Finder: a folder opens to reveal its contents, a file is
+/// selected in its parent. Opening the folder itself matters for `.trove`, which
+/// is hidden — selecting it in the parent shows nothing unless the user has
+/// hidden files turned on.
+#[tauri::command]
+fn open_in_finder(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("“{path}” doesn’t exist yet"));
+    }
+    let mut cmd = Command::new("open");
+    if p.is_dir() {
+        cmd.arg(&path);
+    } else {
+        cmd.args(["-R", &path]);
+    }
+    cmd.spawn().map_err(e2s)?;
+    Ok(())
 }
 
 /// Toggle whether Trove writes its portable `.trove` sidecar into the open
@@ -715,27 +927,32 @@ fn reset_folder(state: State<AppState>, app: tauri::AppHandle) -> Result<(), Str
         std::fs::remove_dir_all(&sidecar_dir).map_err(e2s)?;
     }
 
+    // Stop the in-flight indexing run before clearing, so it can't reattach the
+    // curation we're dropping (and isn't holding the write lock).
+    supersede_indexing(&state);
     {
-        let conn = state.db.lock().unwrap();
+        let mut conn = state.db.lock().unwrap();
+        let tx = db::write_tx(&mut conn).map_err(db_err)?;
         // Drop durable, path-keyed curation for files under this folder only,
         // leaving any other folder's favorites/names alone.
         let prefix = format!("{}/%", escape_like(&root.to_string_lossy()));
-        conn.execute(
+        tx.execute(
             "DELETE FROM favorites WHERE path LIKE ?1 ESCAPE '\\'",
             [&prefix],
         )
-        .map_err(e2s)?;
-        conn.execute(
+        .map_err(db_err)?;
+        tx.execute(
             "DELETE FROM named_faces WHERE path LIKE ?1 ESCAPE '\\'",
             [&prefix],
         )
-        .map_err(e2s)?;
+        .map_err(db_err)?;
         // Clear the live per-folder state so the UI updates immediately, before
         // the re-index / re-analysis finishes. (assets/faces hold only the open
         // folder; both are rebuilt by the re-index that follows.)
-        conn.execute("UPDATE assets SET favorite = 0", [])
-            .map_err(e2s)?;
-        conn.execute("DELETE FROM people", []).map_err(e2s)?;
+        tx.execute("UPDATE assets SET favorite = 0", [])
+            .map_err(db_err)?;
+        tx.execute("DELETE FROM people", []).map_err(db_err)?;
+        tx.commit().map_err(db_err)?;
     }
 
     // Rebuild from scratch. With the sidecar gone and this folder's durable
@@ -756,31 +973,34 @@ fn reset_folder(state: State<AppState>, app: tauri::AppHandle) -> Result<(), Str
 #[tauri::command]
 fn reset_feature(feature: String, state: State<AppState>) -> Result<(), String> {
     {
-        let conn = state.db.lock().unwrap();
+        let mut conn = state.db.lock().unwrap();
+        let tx = db::write_tx(&mut conn).map_err(db_err)?;
         match feature.as_str() {
             "faces" => {
                 // Drop the durable, path-keyed names and clear the live labels so
                 // the People view updates immediately. Clusters/faces are kept.
-                conn.execute("DELETE FROM named_faces", []).map_err(e2s)?;
-                conn.execute("UPDATE people SET name = NULL", []).map_err(e2s)?;
+                tx.execute("DELETE FROM named_faces", []).map_err(db_err)?;
+                tx.execute("UPDATE people SET name = NULL", [])
+                    .map_err(db_err)?;
             }
             "favorites" => {
-                conn.execute("DELETE FROM favorites", []).map_err(e2s)?;
-                conn.execute("UPDATE assets SET favorite = 0", [])
-                    .map_err(e2s)?;
+                tx.execute("DELETE FROM favorites", []).map_err(db_err)?;
+                tx.execute("UPDATE assets SET favorite = 0", [])
+                    .map_err(db_err)?;
             }
             "occasions" => {
-                conn.execute("DELETE FROM special_dates", []).map_err(e2s)?;
+                tx.execute("DELETE FROM special_dates", []).map_err(db_err)?;
             }
             "slideshows" => {
-                conn.execute("DELETE FROM slideshow_presets", [])
-                    .map_err(e2s)?;
+                tx.execute("DELETE FROM slideshow_presets", [])
+                    .map_err(db_err)?;
             }
             "recents" => {
-                conn.execute("DELETE FROM recents", []).map_err(e2s)?;
+                tx.execute("DELETE FROM recents", []).map_err(db_err)?;
             }
             other => return Err(format!("Unknown feature: {other}")),
         }
+        tx.commit().map_err(db_err)?;
     }
     // Favorites and names live in the open folder's portable sidecar too; rewrite
     // it so the reset carries to the folder (no-op when disabled / no folder).
@@ -796,10 +1016,16 @@ fn reset_feature(feature: String, state: State<AppState>) -> Result<(), String> 
 /// and any in-folder `.trove` data are left untouched; per-folder curation is
 /// reset by `reset_folder`, not here.
 #[tauri::command]
-fn reset_app(state: State<AppState>) -> Result<(), String> {
+fn reset_app(state: State<AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    // Stop any in-flight indexing first, so it stops writing rows for the folder
+    // we're about to clear (and releases the write lock). Nothing replaces it —
+    // there's no folder left to index — so the UI is told the run is over.
+    *state.root.lock().unwrap() = None;
+    stop_indexing(&state, &app);
     {
-        let conn = state.db.lock().unwrap();
-        conn.execute_batch(
+        let mut conn = state.db.lock().unwrap();
+        let tx = db::write_tx(&mut conn).map_err(db_err)?;
+        tx.execute_batch(
             "DELETE FROM meta WHERE k IN ('vision_quality','sidecar_enabled','root','index_ver');
              DELETE FROM recents;
              DELETE FROM slideshow_presets;
@@ -809,11 +1035,9 @@ fn reset_app(state: State<AppState>) -> Result<(), String> {
              DELETE FROM asset_labels;
              DELETE FROM people;",
         )
-        .map_err(e2s)?;
+        .map_err(db_err)?;
+        tx.commit().map_err(db_err)?;
     }
-    // Forget the open folder and supersede any in-flight indexing.
-    *state.root.lock().unwrap() = None;
-    state.generation.fetch_add(1, Ordering::SeqCst);
     Ok(())
 }
 
@@ -1386,36 +1610,38 @@ fn merge_people(source: i64, target: i64, state: State<AppState>) -> Result<(), 
     if source == target {
         return Ok(());
     }
-    let conn = state.db.lock().unwrap();
-    let target_name: Option<String> = conn
+    let mut conn = state.db.lock().unwrap();
+    let tx = db::write_tx(&mut conn).map_err(db_err)?;
+    let target_name: Option<String> = tx
         .query_row("SELECT name FROM people WHERE cluster_id=?1", [target], |r| {
             r.get(0)
         })
         .unwrap_or(None);
     if target_name.is_none() {
-        let source_name: Option<String> = conn
+        let source_name: Option<String> = tx
             .query_row("SELECT name FROM people WHERE cluster_id=?1", [source], |r| {
                 r.get(0)
             })
             .unwrap_or(None);
         if let Some(n) = source_name {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO people(cluster_id, name) VALUES(?1, ?2)
                  ON CONFLICT(cluster_id) DO UPDATE SET name=excluded.name",
                 rusqlite::params![target, n],
             )
-            .map_err(e2s)?;
+            .map_err(db_err)?;
         }
     }
-    conn.execute(
+    tx.execute(
         "UPDATE faces SET cluster_id=?1 WHERE cluster_id=?2",
         rusqlite::params![target, source],
     )
-    .map_err(e2s)?;
-    conn.execute("DELETE FROM people WHERE cluster_id=?1", [source])
-        .map_err(e2s)?;
+    .map_err(db_err)?;
+    tx.execute("DELETE FROM people WHERE cluster_id=?1", [source])
+        .map_err(db_err)?;
     // The source's durable labels (path-keyed) now belong to the target.
-    record_cluster_label(&conn, target).map_err(e2s)?;
+    record_cluster_label(&tx, target).map_err(db_err)?;
+    tx.commit().map_err(db_err)?;
     drop(conn);
     // Names changed and cluster assignments changed -> refresh both sidecars.
     sync_sidecar(state.inner(), true);
@@ -1426,15 +1652,17 @@ fn merge_people(source: i64, target: i64, state: State<AppState>) -> Result<(), 
 fn rename_person(cluster_id: i64, name: String, state: State<AppState>) -> Result<(), String> {
     let name = name.trim();
     let value: Option<&str> = if name.is_empty() { None } else { Some(name) };
-    let conn = state.db.lock().unwrap();
-    conn.execute(
+    let mut conn = state.db.lock().unwrap();
+    let tx = db::write_tx(&mut conn).map_err(db_err)?;
+    tx.execute(
         "INSERT INTO people(cluster_id, name) VALUES(?1, ?2)
          ON CONFLICT(cluster_id) DO UPDATE SET name = excluded.name",
         rusqlite::params![cluster_id, value],
     )
-    .map_err(e2s)?;
+    .map_err(db_err)?;
     // Persist by face position so the name survives re-indexing.
-    record_cluster_label(&conn, cluster_id).map_err(e2s)?;
+    record_cluster_label(&tx, cluster_id).map_err(db_err)?;
+    tx.commit().map_err(db_err)?;
     drop(conn);
     sync_sidecar(state.inner(), false);
     Ok(())
@@ -1541,7 +1769,7 @@ fn rename_asset(path: String, name: String, state: State<AppState>) -> Result<As
         "UPDATE assets SET path=?1, name=?2, ext=?3 WHERE path=?4",
         rusqlite::params![new_path_str, name, ext, path],
     )
-    .map_err(e2s)?;
+    .map_err(db_err)?;
     conn.query_row(
         &format!("SELECT {ASSET_COLS} FROM assets WHERE path=?1"),
         [&new_path_str],
@@ -1556,7 +1784,7 @@ fn delete_asset(path: String, state: State<AppState>) -> Result<(), String> {
     trash::delete(&path).map_err(|e| e.to_string())?;
     let conn = state.db.lock().unwrap();
     conn.execute("DELETE FROM assets WHERE path=?1", [&path])
-        .map_err(e2s)?;
+        .map_err(db_err)?;
     // Drop the file's durable state so it can't be re-imported later.
     let _ = conn.execute("DELETE FROM favorites WHERE path=?1", [&path]);
     let _ = conn.execute("DELETE FROM named_faces WHERE path=?1", [&path]);
@@ -1577,6 +1805,18 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
 
 fn e2s<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
+}
+
+/// Like `e2s`, but replaces SQLite's opaque lock errors with something a user can
+/// act on. Only reachable if a writer held the lock past `db::BUSY_TIMEOUT`, i.e.
+/// something is genuinely stuck rather than merely busy.
+fn db_err(e: rusqlite::Error) -> String {
+    match e.sqlite_error_code() {
+        Some(rusqlite::ErrorCode::DatabaseBusy) | Some(rusqlite::ErrorCode::DatabaseLocked) => {
+            "Trove is still writing its index. Please try again in a moment.".to_string()
+        }
+        _ => e.to_string(),
+    }
 }
 
 fn main() {
@@ -1677,6 +1917,7 @@ fn main() {
                 root: Mutex::new(saved_root.clone()),
                 generation: Arc::new(AtomicU64::new(0)),
                 vision_helper,
+                active: Arc::new(Mutex::new(None)),
             });
 
             // Re-scan the previously opened folder on launch, if any.
@@ -1698,6 +1939,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             set_root,
             rescan,
+            get_index_status,
+            cancel_indexing,
+            get_last_analysis,
             get_date_tree,
             list_assets,
             search_assets,
@@ -1714,6 +1958,8 @@ fn main() {
             get_places,
             list_place_assets,
             get_settings,
+            get_data_locations,
+            open_in_finder,
             set_vision_quality,
             set_store_in_folder,
             reset_folder,
@@ -1776,6 +2022,23 @@ mod tests {
         let (conds, binds) = slideshow_conditions(&q);
         assert!(conds.is_empty());
         assert!(binds.is_empty());
+    }
+
+    #[test]
+    fn collapses_home_only_on_a_path_boundary() {
+        let home = "/Users/vik";
+        assert_eq!(
+            collapse_home("/Users/vik/Library/Application Support/x", home),
+            "~/Library/Application Support/x"
+        );
+        assert_eq!(collapse_home(home, home), "~");
+        // A different user whose name merely starts with ours keeps its path.
+        assert_eq!(collapse_home("/Users/vikram/Photos", home), "/Users/vikram/Photos");
+        assert_eq!(collapse_home("/Volumes/SSD/.trove", home), "/Volumes/SSD/.trove");
+        // A trailing slash on $HOME must not produce "~//Photos".
+        assert_eq!(collapse_home("/Users/vik/Photos", "/Users/vik/"), "~/Photos");
+        // No $HOME to speak of: leave it alone.
+        assert_eq!(collapse_home("/Users/vik/Photos", ""), "/Users/vik/Photos");
     }
 
     #[test]

@@ -44,6 +44,9 @@ fn abs(root: &Path, rel: &str) -> String {
     root.join(rel).to_string_lossy().to_string()
 }
 
+/// A cached face box: (x, y, w, h, cluster, embedding).
+type Face = (f64, f64, f64, f64, Option<i64>, Vec<u8>);
+
 fn io_err<E: std::fmt::Display>(e: E) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
 }
@@ -224,10 +227,12 @@ pub fn restore_analysis(central: &mut Connection, root: &Path) -> usize {
         return 0;
     }
 
-    let Ok(tx) = central.transaction() else {
-        return 0;
-    };
-    let mut restored = 0usize;
+    // Collect every cache hit before touching the central db: these are reads
+    // against a file that may live on a slow external volume, and holding the
+    // central write lock across them blocks the UI connection long enough for its
+    // commands to fail with "database is locked".
+    type Hit = (i64, Option<String>, Vec<String>, Vec<Face>);
+    let mut hits: Vec<Hit> = Vec::new();
     for (id, path, size, mtime) in candidates {
         let Some(relp) = rel(root, &path) else { continue };
         let hit: Option<(i64, i64, Option<String>)> = side
@@ -248,7 +253,7 @@ pub fn restore_analysis(central: &mut Connection, root: &Path) -> usize {
                     .map(|rows| rows.flatten().collect())
             })
             .unwrap_or_default();
-        let faces: Vec<(f64, f64, f64, f64, Option<i64>, Vec<u8>)> = side
+        let faces: Vec<Face> = side
             .prepare("SELECT x,y,w,h,cluster,embedding FROM a_faces WHERE path=?1")
             .and_then(|mut st| {
                 st.query_map([&relp], |r| {
@@ -265,19 +270,30 @@ pub fn restore_analysis(central: &mut Connection, root: &Path) -> usize {
             })
             .unwrap_or_default();
 
+        hits.push((id, socr, labels, faces));
+    }
+    if hits.is_empty() {
+        return 0;
+    }
+
+    let Ok(tx) = crate::db::write_tx(central) else {
+        return 0;
+    };
+    let mut restored = 0usize;
+    for (id, socr, labels, faces) in &hits {
         let _ = tx.execute(
             "UPDATE assets SET ocr=?1, vision_done=1 WHERE id=?2",
             rusqlite::params![socr, id],
         );
         let _ = tx.execute("DELETE FROM asset_labels WHERE asset_id=?1", [id]);
         let _ = tx.execute("DELETE FROM faces WHERE asset_id=?1", [id]);
-        for l in &labels {
+        for l in labels {
             let _ = tx.execute(
                 "INSERT OR IGNORE INTO asset_labels(asset_id,label) VALUES(?1,?2)",
                 rusqlite::params![id, l],
             );
         }
-        for (x, y, w, h, cluster, emb) in &faces {
+        for (x, y, w, h, cluster, emb) in faces {
             let _ = tx.execute(
                 "INSERT INTO faces(asset_id,x,y,w,h,embedding,cluster_id) VALUES(?1,?2,?3,?4,?5,?6,?7)",
                 rusqlite::params![id, x, y, w, h, emb, cluster],
@@ -343,7 +359,7 @@ pub fn export_analysis(central: &Connection, root: &Path) {
                 rusqlite::params![relp, l],
             );
         }
-        let faces: Vec<(f64, f64, f64, f64, Option<i64>, Vec<u8>)> = central
+        let faces: Vec<Face> = central
             .prepare("SELECT x,y,w,h,cluster_id,embedding FROM faces WHERE asset_id=?1")
             .and_then(|mut st| {
                 st.query_map([id], |r| {

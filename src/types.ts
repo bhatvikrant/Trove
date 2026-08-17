@@ -58,6 +58,21 @@ export interface Settings {
   storeInFolder: boolean;
 }
 
+/** One place Trove keeps data on disk. */
+export interface DataLocation {
+  path: string;
+  /** `path` with the user's home collapsed to `~`, for display. */
+  display: string;
+  /** False for a sidecar not written yet — the path still says where it'd go. */
+  exists: boolean;
+}
+
+/** Where the open folder's Trove data lives, inside it and on this Mac. */
+export interface DataLocations {
+  folder: DataLocation | null;
+  app: DataLocation;
+}
+
 export type Lens = "date" | "places" | "people" | "occasions";
 
 export interface PlaceCity {
@@ -127,6 +142,12 @@ export interface DateTree {
 }
 
 export interface IndexProgress {
+  /** Identifies the analysis run these numbers belong to. */
+  runId: number;
+  /** The folder being indexed — not necessarily the one on screen. */
+  root: string;
+  /** How long the run has been going, measured by the backend. */
+  elapsedMs: number;
   scanned: number;
   indexed: number;
   total: number | null;
@@ -135,9 +156,48 @@ export interface IndexProgress {
 }
 
 export interface VisionProgress {
+  runId: number;
+  root: string;
+  elapsedMs: number;
   processed: number;
   total: number;
   done: boolean;
+}
+
+/**
+ * The indexing run in flight, as the backend sees it. Indexing outlives the
+ * screen that started it, so the UI asks for this on mount rather than relying
+ * on having heard the events.
+ */
+export interface IndexStatus {
+  runId: number;
+  root: string;
+  elapsedMs: number;
+  /** Walking + reading metadata, then the photo-analysis pass. */
+  phase: "indexing" | "analyzing";
+  scanned: number;
+  indexed: number;
+  total: number | null;
+  processed: number;
+  visionTotal: number;
+}
+
+/** The `index-cancelled` event: a run stopped before it finished. */
+export interface IndexCancelled {
+  runId: number;
+  root: string;
+}
+
+/** A finished analysis run: indexing + photo analysis, end to end. */
+export interface AnalysisRun {
+  durationMs: number;
+  finishedAt: number; // unix seconds
+}
+
+/** The `analysis-done` event: a run that just ended. */
+export interface AnalysisDone extends AnalysisRun {
+  runId: number;
+  root: string;
 }
 
 // Inclusive date range in local time. `null` means unbounded on that side.

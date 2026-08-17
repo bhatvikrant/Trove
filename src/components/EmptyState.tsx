@@ -47,21 +47,44 @@ function Logo() {
   );
 }
 
+/** A folder being indexed in the background, as shown on its tile. */
+export interface FolderIndexing {
+  root: string;
+  label: string;
+  /** Completion 0–100, or null while the total is still unknown. */
+  pct: number | null;
+}
+
 interface Props {
   onPickFolder: () => void;
   onOpen: (path: string) => void;
   /** Bumped to re-fetch recents (e.g. after they're reset in Settings). */
   refreshToken?: number;
+  /**
+   * The folder being indexed in the background, if any. Indexing keeps running
+   * while the user is here, so it's reported on that folder's own tile.
+   */
+  indexing?: FolderIndexing | null;
+  onCancelIndexing?: () => void;
 }
 
-export function EmptyState({ onPickFolder, onOpen, refreshToken }: Props) {
+export function EmptyState({
+  onPickFolder,
+  onOpen,
+  refreshToken,
+  indexing,
+  onCancelIndexing,
+}: Props) {
   const [recents, setRecents] = useState<RecentFolder[]>([]);
   const [quick, setQuick] = useState<QuickLocations>({ standard: [], drives: [] });
+  const indexingRoot = indexing?.root ?? null;
 
+  // Also re-fetch when a background run starts or ends: the stored asset count
+  // is only written when a run completes.
   useEffect(() => {
     getRecentFolders().then(setRecents).catch(() => {});
     getQuickLocations().then(setQuick).catch(() => {});
-  }, [refreshToken]);
+  }, [refreshToken, indexingRoot]);
 
   const handleRemove = useCallback(async (path: string) => {
     try {
@@ -101,35 +124,71 @@ export function EmptyState({ onPickFolder, onOpen, refreshToken }: Props) {
           <section className="welcome-section">
             <h2>Recent</h2>
             <div className="card-grid">
-              {recents.map((r) => (
-                <div
-                  key={r.path}
-                  className={`open-card ${r.exists ? "" : "disabled"}`}
-                  onClick={() => r.exists && onOpen(r.path)}
-                  title={r.path}
-                >
-                  <span className="open-card-ico">📁</span>
-                  <span className="open-card-body">
-                    <span className="open-card-name">{r.name}</span>
-                    <span className="open-card-sub">
-                      {r.exists
-                        ? `${r.count != null ? `${r.count.toLocaleString()} assets · ` : ""}${timeAgo(r.lastOpened)}`
-                        : "Unavailable"}
-                    </span>
-                  </span>
-                  <button
-                    className="open-card-remove"
-                    title="Remove from recents"
-                    aria-label="Remove from recents"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(r.path);
-                    }}
+              {recents.map((r) => {
+                const busy = indexing?.root === r.path ? indexing : null;
+                return (
+                  <div
+                    key={r.path}
+                    className={`open-card ${r.exists ? "" : "disabled"}${
+                      busy ? " indexing" : ""
+                    }`}
+                    onClick={() => r.exists && onOpen(r.path)}
+                    title={r.path}
                   >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                    <span className="open-card-ico">
+                      {busy ? <span className="spinner" /> : "📁"}
+                    </span>
+                    <span className="open-card-body">
+                      <span className="open-card-name">{r.name}</span>
+                      <span className="open-card-sub">
+                        {busy
+                          ? busy.label
+                          : r.exists
+                            ? `${r.count != null ? `${r.count.toLocaleString()} assets · ` : ""}${timeAgo(r.lastOpened)}`
+                            : "Unavailable"}
+                      </span>
+                      {busy && (
+                        <span
+                          className={`open-card-bar${
+                            busy.pct === null ? " indeterminate" : ""
+                          }`}
+                        >
+                          <span
+                            className="bar"
+                            style={
+                              busy.pct === null ? undefined : { width: `${busy.pct}%` }
+                            }
+                          />
+                        </span>
+                      )}
+                    </span>
+                    {busy ? (
+                      <button
+                        className="open-card-stop"
+                        title="Stop indexing (what's indexed so far is kept)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCancelIndexing?.();
+                        }}
+                      >
+                        Stop
+                      </button>
+                    ) : (
+                      <button
+                        className="open-card-remove"
+                        title="Remove from recents"
+                        aria-label="Remove from recents"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemove(r.path);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </section>
         )}

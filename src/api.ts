@@ -3,11 +3,16 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
+  AnalysisDone,
+  AnalysisRun,
   Asset,
   AssetFilter,
+  DataLocations,
   DateTree,
   Facets,
+  IndexCancelled,
   IndexProgress,
+  IndexStatus,
   Kind,
   Person,
   Places,
@@ -82,9 +87,36 @@ export async function setStoreInFolder(enabled: boolean): Promise<void> {
   await invoke("set_store_in_folder", { enabled });
 }
 
+/** Where the open folder's Trove data is kept: inside it, and on this Mac. */
+export async function getDataLocations(): Promise<DataLocations> {
+  return invoke("get_data_locations");
+}
+
+/** Show a path in Finder — folders open, files are selected in their parent. */
+export async function openInFinder(path: string): Promise<void> {
+  await invoke("open_in_finder", { path });
+}
+
 /** Re-scan the current root for new/changed/removed files. */
 export async function rescan(): Promise<void> {
   await invoke("rescan");
+}
+
+/**
+ * The folder being indexed right now, or null if nothing is. Indexing runs in
+ * the background and outlives the screen that started it, so this is how a
+ * freshly mounted view (the welcome screen on launch, say) finds out.
+ */
+export async function getIndexStatus(): Promise<IndexStatus | null> {
+  return invoke("get_index_status");
+}
+
+/**
+ * Stop the indexing run in flight. What was indexed so far is kept; opening the
+ * folder again starts a fresh pass.
+ */
+export async function cancelIndexing(): Promise<void> {
+  await invoke("cancel_indexing");
 }
 
 /**
@@ -368,4 +400,26 @@ export async function onVisionProgress(
   cb: (p: VisionProgress) => void
 ): Promise<UnlistenFn> {
   return listen<VisionProgress>("vision-progress", (e) => cb(e.payload));
+}
+
+/** Subscribe to the end of an analysis run (indexing + photo analysis). */
+export async function onAnalysisDone(
+  cb: (r: AnalysisDone) => void
+): Promise<UnlistenFn> {
+  return listen<AnalysisDone>("analysis-done", (e) => cb(e.payload));
+}
+
+/** Subscribe to a run being stopped before it finished. */
+export async function onIndexCancelled(
+  cb: (c: IndexCancelled) => void
+): Promise<UnlistenFn> {
+  return listen<IndexCancelled>("index-cancelled", (e) => cb(e.payload));
+}
+
+/**
+ * How long the open folder's last completed analysis took, or null if it has
+ * never finished one. Persisted, so it's still there after a restart.
+ */
+export async function getLastAnalysis(): Promise<AnalysisRun | null> {
+  return invoke("get_last_analysis");
 }
