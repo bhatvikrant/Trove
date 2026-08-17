@@ -11,7 +11,7 @@ const PERSON_ROW_H = 44;
 type Row =
   | { kind: "person"; key: string; person: Person }
   | { kind: "asset"; key: string; asset: Asset }
-  | { kind: "loading"; key: string };
+  | { kind: "loading"; key: string; count: number };
 
 interface Props {
   people: Person[] | null;
@@ -120,7 +120,7 @@ export function PeopleTree({
         if (assets) {
           for (const a of assets) out.push({ kind: "asset", key: `a:${a.id}`, asset: a });
         } else {
-          out.push({ kind: "loading", key: `l:${p.clusterId}` });
+          out.push({ kind: "loading", key: `l:${p.clusterId}`, count: p.count });
         }
       }
     }
@@ -261,7 +261,8 @@ export function PeopleTree({
                   <span className="tree-caret leaf">▶</span>
                   <span className="tree-label" style={{ color: "var(--text-faint)" }}>
                     <span className="spinner" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />
-                    Loading…
+                    Loading {row.count.toLocaleString()} item
+                    {row.count === 1 ? "" : "s"}…
                   </span>
                 </div>
               ) : (

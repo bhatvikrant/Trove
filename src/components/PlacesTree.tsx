@@ -22,7 +22,7 @@ type Row =
   | { kind: "city"; key: string; country: string; city: string; count: number; depth: 1 }
   | { kind: "noloc"; key: string; count: number; depth: 0 }
   | { kind: "asset"; key: string; depth: number; asset: Asset }
-  | { kind: "loading"; key: string; depth: number };
+  | { kind: "loading"; key: string; depth: number; count: number };
 
 interface Props {
   places: Places | null;
@@ -156,7 +156,7 @@ export function PlacesTree({
             out.push({ kind: "asset", key: `a:${a.id}`, depth: 2, asset: a });
           }
         } else {
-          out.push({ kind: "loading", key: `l:${ciKey}`, depth: 2 });
+          out.push({ kind: "loading", key: `l:${ciKey}`, depth: 2, count: ci.count });
         }
       }
     }
@@ -170,7 +170,7 @@ export function PlacesTree({
             out.push({ kind: "asset", key: `a:${a.id}`, depth: 1, asset: a });
           }
         } else {
-          out.push({ kind: "loading", key: `l:${NOLOC}`, depth: 1 });
+          out.push({ kind: "loading", key: `l:${NOLOC}`, depth: 1, count: places.noLocation });
         }
       }
     }
@@ -354,7 +354,8 @@ export function PlacesTree({
                 ) : row.kind === "loading" ? (
                   <span className="tree-label" style={{ color: "var(--text-faint)" }}>
                     <span className="spinner" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />
-                    Loading…
+                    Loading {row.count.toLocaleString()} item
+                    {row.count === 1 ? "" : "s"}…
                   </span>
                 ) : (
                   <>

@@ -504,7 +504,7 @@ fn get_last_analysis(state: State<AppState>) -> Result<Option<AnalysisRun>, Stri
 }
 
 #[tauri::command]
-fn get_date_tree(filter: Option<Filter>, state: State<AppState>) -> Result<DateTree, String> {
+async fn get_date_tree(filter: Option<Filter>, state: State<'_, AppState>) -> Result<DateTree, String> {
     let (conds, binds) = filter_conditions(&filter);
     let conn = state.db.lock().unwrap();
     let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
@@ -632,13 +632,13 @@ fn run_asset_query(
 }
 
 #[tauri::command]
-fn list_assets(
+async fn list_assets(
     year: i32,
     month: u32,
     day: u32,
     kind: Option<String>,
     filter: Option<Filter>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<Asset>, String> {
     let (mut conds, mut binds) = filter_conditions(&filter);
     conds.insert(0, "year = ?".into());
@@ -660,11 +660,11 @@ fn list_assets(
 }
 
 #[tauri::command]
-fn search_assets(
+async fn search_assets(
     query: String,
     filter: Option<Filter>,
     limit: i64,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<Asset>, String> {
     let (mut conds, mut binds) = filter_conditions(&filter);
     let like = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
@@ -706,7 +706,7 @@ fn query_facet(conn: &Connection, sql: &str) -> rusqlite::Result<Vec<FacetValue>
 }
 
 #[tauri::command]
-fn get_facets(state: State<AppState>) -> Result<Facets, String> {
+async fn get_facets(state: State<'_, AppState>) -> Result<Facets, String> {
     let conn = state.db.lock().unwrap();
     let cameras = query_facet(
         &conn,
@@ -1097,7 +1097,7 @@ struct Places {
 /// Aggregated country → city counts (with representative coordinates for map
 /// pins), plus the count of assets with no location — within the filter.
 #[tauri::command]
-fn get_places(filter: Option<Filter>, state: State<AppState>) -> Result<Places, String> {
+async fn get_places(filter: Option<Filter>, state: State<'_, AppState>) -> Result<Places, String> {
     let (conds, binds) = filter_conditions(&filter);
     let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
     let conn = state.db.lock().unwrap();
@@ -1163,11 +1163,11 @@ fn get_places(filter: Option<Filter>, state: State<AppState>) -> Result<Places, 
 /// Assets at a place. `country = None` means the "no location" bucket; with a
 /// country and no city, all assets in that country.
 #[tauri::command]
-fn list_place_assets(
+async fn list_place_assets(
     country: Option<String>,
     city: Option<String>,
     filter: Option<Filter>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<Asset>, String> {
     let (mut conds, mut binds) = filter_conditions(&filter);
     match country {
@@ -1205,7 +1205,7 @@ struct Person {
 /// Clustered people (≥2 faces) within the filter, each with a representative
 /// face (largest) for a thumbnail. Best-effort recognition.
 #[tauri::command]
-fn get_people(filter: Option<Filter>, state: State<AppState>) -> Result<Vec<Person>, String> {
+async fn get_people(filter: Option<Filter>, state: State<'_, AppState>) -> Result<Vec<Person>, String> {
     let (conds, binds) = filter_conditions(&filter);
     let params: Vec<&dyn rusqlite::types::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
     let conn = state.db.lock().unwrap();
@@ -1247,10 +1247,10 @@ fn get_people(filter: Option<Filter>, state: State<AppState>) -> Result<Vec<Pers
 }
 
 #[tauri::command]
-fn list_person_assets(
+async fn list_person_assets(
     cluster_id: i64,
     filter: Option<Filter>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<Asset>, String> {
     let (mut conds, mut binds) = filter_conditions(&filter);
     conds.push("id IN (SELECT asset_id FROM faces WHERE cluster_id = ?)".into());
@@ -1347,9 +1347,9 @@ fn slideshow_conditions(q: &SlideshowQuery) -> (Vec<String>, Vec<Bind>) {
 /// Assets matching a slideshow query, each carrying caption extras (the named
 /// people it contains and a place label). The three filter groups stack (AND).
 #[tauri::command]
-fn list_slideshow_assets(
+async fn list_slideshow_assets(
     query: SlideshowQuery,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<SlideshowItem>, String> {
     let (conds, mut binds) = slideshow_conditions(&query);
     let order = if query.order == "shuffle" {
@@ -1416,7 +1416,7 @@ fn list_slideshow_assets(
 
 /// Count assets matching a slideshow query (for the live match indicator).
 #[tauri::command]
-fn count_slideshow_assets(query: SlideshowQuery, state: State<AppState>) -> Result<i64, String> {
+async fn count_slideshow_assets(query: SlideshowQuery, state: State<'_, AppState>) -> Result<i64, String> {
     let (conds, binds) = slideshow_conditions(&query);
     let sql = format!("SELECT COUNT(*) FROM assets{}", where_clause(&conds));
     let conn = state.db.lock().unwrap();
@@ -1668,67 +1668,94 @@ fn rename_person(cluster_id: i64, name: String, state: State<AppState>) -> Resul
     Ok(())
 }
 
+/// File mtime in whole seconds, or 0 if it can't be read. Part of every
+/// thumbnail's cache key, so an edited file re-renders.
+fn mtime_secs(path: &std::path::Path) -> i64 {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Run thumbnail work on a blocking thread and hand back its result.
+///
+/// Thumbnailing shells out to `sips` / `ffmpeg` / `qlmanage`, which costs
+/// hundreds of milliseconds per file. Tauri runs a plain (non-`async`) command
+/// on the main thread, so doing this inline froze the whole window whenever a
+/// folder of not-yet-cached items scrolled into view — the tree couldn't even
+/// paint its own loading rows. Off-thread, the window stays live no matter how
+/// much thumbnailing is queued behind it.
+async fn off_thread<F>(f: F) -> Result<Option<String>, String>
+where
+    F: FnOnce() -> Option<PathBuf> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || f().map(|p| p.to_string_lossy().to_string()))
+        .await
+        .map_err(e2s)
+}
+
 #[tauri::command]
-fn get_face_thumb(
+async fn get_face_thumb(
     path: String,
     x: f64,
     y: f64,
     w: f64,
     h: f64,
     size: u32,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
-    let mtime = std::fs::metadata(&path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let thumb = thumbs::face_thumb(&state.cache_dir, &path, mtime, (x, y, w, h), size.clamp(48, 512));
-    Ok(thumb.map(|p| p.to_string_lossy().to_string()))
+    let cache_dir = state.cache_dir.clone();
+    off_thread(move || {
+        let mtime = mtime_secs(std::path::Path::new(&path));
+        thumbs::face_thumb(&cache_dir, &path, mtime, (x, y, w, h), size.clamp(48, 512))
+    })
+    .await
 }
 
 #[tauri::command]
-fn get_thumb(path: String, size: u32, state: State<AppState>) -> Result<Option<String>, String> {
-    let p = std::path::Path::new(&path);
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_lowercase())
-        .unwrap_or_default();
-    let kind = metadata::classify(&ext);
-    let mtime = std::fs::metadata(p)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let thumb = thumbs::ensure(&state.cache_dir, &path, kind, mtime, size.clamp(48, 1024));
-    Ok(thumb.map(|p| p.to_string_lossy().to_string()))
+async fn get_thumb(
+    path: String,
+    size: u32,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let cache_dir = state.cache_dir.clone();
+    off_thread(move || {
+        let p = std::path::Path::new(&path);
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+        let kind = metadata::classify(&ext);
+        thumbs::ensure(&cache_dir, &path, kind, mtime_secs(p), size.clamp(48, 1024))
+    })
+    .await
 }
 
 /// A cached, screen-sized preview for an image (so we don't decode the full
 /// multi-megapixel/HEIC original on every step). Returns None for non-images —
 /// the frontend renders those (video/pdf/audio) natively from the original.
 #[tauri::command]
-fn get_preview(path: String, state: State<AppState>) -> Result<Option<String>, String> {
-    let p = std::path::Path::new(&path);
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_lowercase())
-        .unwrap_or_default();
-    if metadata::classify(&ext) != "image" {
-        return Ok(None);
-    }
-    let mtime = std::fs::metadata(p)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let preview = thumbs::ensure(&state.cache_dir, &path, "image", mtime, 2560);
-    Ok(preview.map(|p| p.to_string_lossy().to_string()))
+async fn get_preview(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let cache_dir = state.cache_dir.clone();
+    off_thread(move || {
+        let p = std::path::Path::new(&path);
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+        if metadata::classify(&ext) != "image" {
+            return None;
+        }
+        thumbs::ensure(&cache_dir, &path, "image", mtime_secs(p), 2560)
+    })
+    .await
 }
 
 /// Rename an asset on disk (within its folder) and update the index. Returns the

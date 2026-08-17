@@ -55,7 +55,7 @@ type Row =
   | { kind: "day"; key: string; depth: number; label: string; count: number; nodeKey: string }
   | { kind: "kindGroup"; key: string; depth: number; label: string; icon: string; count: number; nodeKey: string }
   | { kind: "asset"; key: string; depth: number; asset: Asset }
-  | { kind: "loading"; key: string; depth: number };
+  | { kind: "loading"; key: string; depth: number; count: number };
 
 interface Props {
   tree: DateTreeData | null;
@@ -125,24 +125,41 @@ export function DateTree({
     });
   }, []);
 
-  // All year/month/day node keys. "Expand all" opens the calendar down to the
-  // day level (revealing every kind group) without eagerly loading the
-  // individual asset lists under each kind — that stays lazy on click.
-  const allExpandableKeys = useMemo(() => {
-    if (!tree) return [];
-    const keys: string[] = [];
+  // Walked once per tree: every year/month/day node key, and — per year and
+  // month — its own key plus every date node beneath it.
+  //
+  // Both are read while rendering: every folder row on screen asks for its
+  // branch to decide which way its fold button points. Deriving that by
+  // scanning the whole key list per row is O(rows × nodes) on every frame,
+  // which is what made scrolling a big library crawl.
+  //
+  // "Expand all" opens the calendar down to the day level (revealing every kind
+  // group) without eagerly loading the asset lists under each kind — that stays
+  // lazy on click.
+  const { allExpandableKeys, subtreeKeys } = useMemo(() => {
+    const all: string[] = [];
+    const subtrees = new Map<string, string[]>();
+    if (!tree) return { allExpandableKeys: all, subtreeKeys: subtrees };
     for (const yn of tree.years) {
       const yKey = `y:${yn.year}`;
-      keys.push(yKey);
+      const yBranch = [yKey];
+      all.push(yKey);
       for (const mn of yn.months) {
         const mKey = `${yKey}:m:${mn.month}`;
-        keys.push(mKey);
+        const mBranch = [mKey];
+        all.push(mKey);
+        yBranch.push(mKey);
         for (const dn of mn.days) {
-          keys.push(`${mKey}:d:${dn.day}`);
+          const dKey = `${mKey}:d:${dn.day}`;
+          all.push(dKey);
+          yBranch.push(dKey);
+          mBranch.push(dKey);
         }
+        subtrees.set(mKey, mBranch);
       }
+      subtrees.set(yKey, yBranch);
     }
-    return keys;
+    return { allExpandableKeys: all, subtreeKeys: subtrees };
   }, [tree]);
 
   const expandAll = useCallback(
@@ -153,9 +170,8 @@ export function DateTree({
 
   // The node's own key plus every date node beneath it (down to the day level).
   const subtreeKeysFor = useCallback(
-    (nodeKey: string) =>
-      allExpandableKeys.filter((k) => k === nodeKey || k.startsWith(nodeKey + ":")),
-    [allExpandableKeys]
+    (nodeKey: string) => subtreeKeys.get(nodeKey) ?? [],
+    [subtreeKeys]
   );
 
   // After an edit (favorite/rename/delete) or a tree/filter change, the cached
@@ -241,27 +257,39 @@ export function DateTree({
     [filter]
   );
 
-  // The kind-group node keys under a given day (e.g. its Photos/Videos rows),
-  // with the info needed to lazily load each group's assets.
+  // The kind-group node keys under each day (e.g. its Photos/Videos rows), with
+  // the info needed to lazily load each group's assets. Built with the tree for
+  // the same reason as `subtreeKeys`: every day row on screen asks for its own,
+  // and walking years→months→days per row is not something to do per frame.
+  const dayKinds = useMemo(() => {
+    const map = new Map<
+      string,
+      { kindKey: string; y: number; m: number; d: number; k: Kind }[]
+    >();
+    if (!tree) return map;
+    for (const yn of tree.years) {
+      for (const mn of yn.months) {
+        for (const dn of mn.days) {
+          const dayKey = `y:${yn.year}:m:${mn.month}:d:${dn.day}`;
+          map.set(
+            dayKey,
+            dn.kinds.map((kc) => ({
+              kindKey: `${dayKey}:k:${kc.kind}`,
+              y: yn.year,
+              m: mn.month,
+              d: dn.day,
+              k: kc.kind,
+            }))
+          );
+        }
+      }
+    }
+    return map;
+  }, [tree]);
+
   const dayKindKeys = useCallback(
-    (dayKey: string) => {
-      const parts = dayKey.split(":"); // y:Y:m:M:d:D
-      const y = Number(parts[1]);
-      const m = Number(parts[3]);
-      const d = Number(parts[5]);
-      const dn = tree?.years
-        .find((n) => n.year === y)
-        ?.months.find((n) => n.month === m)
-        ?.days.find((n) => n.day === d);
-      return (dn?.kinds ?? []).map((kc) => ({
-        kindKey: `${dayKey}:k:${kc.kind}`,
-        y,
-        m,
-        d,
-        k: kc.kind,
-      }));
-    },
-    [tree]
+    (dayKey: string) => dayKinds.get(dayKey) ?? [],
+    [dayKinds]
   );
 
   // The full set of node keys an "expand all" on this row toggles: date nodes
@@ -369,7 +397,14 @@ export function DateTree({
                 out.push({ kind: "asset", key: `a:${a.id}`, depth: 4, asset: a });
               }
             } else {
-              out.push({ kind: "loading", key: `l:${kKey}`, depth: 4 });
+              // Say how many are coming — a folder that announces "1,204
+              // items" reads as working, where a bare "Loading…" reads as hung.
+              out.push({
+                kind: "loading",
+                key: `l:${kKey}`,
+                depth: 4,
+                count: kn.count,
+              });
             }
           }
         }
@@ -716,7 +751,8 @@ export function DateTree({
                   ) : row.kind === "loading" ? (
                     <span className="tree-label" style={{ color: "var(--text-faint)" }}>
                       <span className="spinner" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />
-                      Loading…
+                      Loading {row.count.toLocaleString()} item
+                      {row.count === 1 ? "" : "s"}…
                     </span>
                   ) : (
                     <>
