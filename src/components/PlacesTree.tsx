@@ -275,6 +275,7 @@ export function PlacesTree({
             expanded.has(row.key);
           const isSelected = row.kind === "asset" && selected?.id === row.asset.id;
           const hasChildren = row.kind !== "asset" && row.kind !== "loading";
+          const isLoading = hasChildren && loadingKeys.has(row.key);
           return (
             <div
               key={row.key}
@@ -293,6 +294,7 @@ export function PlacesTree({
                   "tree-row " +
                   (row.kind === "country" ? "tree-year " : row.kind === "asset" ? "tree-asset " : "") +
                   (activeKey === row.key ? "focused " : "") +
+                  (isLoading ? "loading " : "") +
                   (isSelected ? "selected" : "")
                 }
                 onClick={() => onRowClick(row)}

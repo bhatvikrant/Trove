@@ -208,7 +208,12 @@ export function PeopleTree({
               }}
             >
               {row.kind === "person" ? (
-                <div className="person-row" onClick={() => toggle(row.person.clusterId)}>
+                <div
+                  className={`person-row ${
+                    loadingKeys.has(row.person.clusterId) ? "loading" : ""
+                  }`}
+                  onClick={() => toggle(row.person.clusterId)}
+                >
                   <span className={`tree-caret ${expanded.has(row.person.clusterId) ? "open" : ""}`}>▶</span>
                   <FaceThumb
                     path={row.person.path}

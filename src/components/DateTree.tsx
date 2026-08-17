@@ -645,6 +645,7 @@ export function DateTree({
               row.kind !== "asset" && row.kind !== "loading" && expanded.has(row.nodeKey);
             const isSelected = row.kind === "asset" && selected?.id === row.asset.id;
             const hasChildren = row.kind !== "asset" && row.kind !== "loading";
+            const isLoading = hasChildren && loadingKeys.has(row.nodeKey);
             // Branch fold/unfold appears on every folder row — years, months
             // and days (a day expands/collapses its kind groups).
             const subtreeKeys = subtreeToggleKeys(row);
@@ -677,6 +678,7 @@ export function DateTree({
                             ? "tree-asset "
                             : "") +
                     (isSelected ? "selected " : "") +
+                    (isLoading ? "loading " : "") +
                     (activeKey === row.key ? "focused" : "")
                   }
                   onClick={() => onRowClick(row)}

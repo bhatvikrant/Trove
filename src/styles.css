@@ -531,6 +531,7 @@ button:disabled {
   object-fit: cover;
 }
 .person-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -860,6 +861,7 @@ body.dragging-face * {
 
 /* ---------- Tree rows ---------- */
 .tree-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -870,6 +872,42 @@ body.dragging-face * {
   white-space: nowrap;
   overflow: hidden;
   cursor: pointer;
+}
+/* A folder that's fetching its contents: an indeterminate bar sweeps the foot
+   of the row, so the thing you clicked is visibly the thing that's working. */
+.tree-row.loading::after,
+.person-row.loading::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent),
+    transparent
+  );
+  background-size: 45% 100%;
+  background-repeat: no-repeat;
+  animation: tree-row-loading 1.1s linear infinite;
+}
+@keyframes tree-row-loading {
+  from {
+    background-position: -45% 0;
+  }
+  to {
+    background-position: 145% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tree-row.loading::after,
+  .person-row.loading::after {
+    animation: none;
+    background: var(--accent-soft);
+    background-size: 100% 100%;
+  }
 }
 .tree-row:hover {
   background: var(--hover);
@@ -2096,6 +2134,8 @@ body.dragging-face * {
   pointer-events: none;
 }
 .toast {
+  position: relative;
+  overflow: hidden; /* clips the timer bar to the rounded corners */
   pointer-events: auto;
   display: flex;
   align-items: center;
@@ -2108,6 +2148,39 @@ body.dragging-face * {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
   font-size: 12.5px;
   animation: toast-in 0.16s ease;
+}
+/* Grows across the foot of the toast over its lifetime — how long is left to
+   hit Undo. Duration comes from the toast's own, set inline. */
+.toast-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation-name: toast-timer;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes toast-timer {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.toast-error .toast-timer {
+  background: #e5484d;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-timer {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.4;
+  }
 }
 @keyframes toast-in {
   from {

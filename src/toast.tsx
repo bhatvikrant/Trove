@@ -15,6 +15,8 @@ export interface ToastOptions {
 interface Toast extends ToastOptions {
   id: number;
   message: string;
+  /** Resolved auto-dismiss delay in ms; 0 means it stays until dismissed. */
+  duration: number;
 }
 
 const MAX_TOASTS = 4;
@@ -39,7 +41,8 @@ function clearTimer(id: number) {
 /** Show a transient toast. Returns its id so callers can dismiss it early. */
 export function showToast(message: string, opts: ToastOptions = {}): number {
   const id = nextId++;
-  toasts = [...toasts, { id, message, ...opts }];
+  const duration = opts.duration ?? 3000;
+  toasts = [...toasts, { id, message, ...opts, duration }];
   // Keep the stack shallow: drop the oldest when it grows past the cap.
   while (toasts.length > MAX_TOASTS) {
     const dropped = toasts[0];
@@ -47,7 +50,6 @@ export function showToast(message: string, opts: ToastOptions = {}): number {
     clearTimer(dropped.id);
   }
   emit();
-  const duration = opts.duration ?? 3000;
   if (duration > 0) {
     timers.set(id, window.setTimeout(() => dismissToast(id), duration));
   }
@@ -99,6 +101,15 @@ export function Toaster() {
           >
             ✕
           </button>
+          {/* Runs the length of the toast over its lifetime, so an undoable
+              action shows how long is left to change your mind. Pure CSS —
+              a re-render can't restart it mid-count. */}
+          {t.duration > 0 && (
+            <span
+              className="toast-timer"
+              style={{ animationDuration: `${t.duration}ms` }}
+            />
+          )}
         </div>
       ))}
     </div>
