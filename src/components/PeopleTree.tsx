@@ -155,6 +155,22 @@ export function PeopleTree({
     onVisibleAssetsChange?.(visibleAssets);
   }, [visibleAssets, onVisibleAssetsChange]);
 
+  // Keep the selected row in view as the selection moves (prev/next in the
+  // preview pane). Tracked by id so re-flattening the rows doesn't yank the
+  // list back to a row the user has since scrolled away from.
+  const scrolledToRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!selected) {
+      scrolledToRef.current = null;
+      return;
+    }
+    if (scrolledToRef.current === selected.id) return;
+    const idx = rows.findIndex((r) => r.kind === "asset" && r.asset.id === selected.id);
+    if (idx < 0) return;
+    scrolledToRef.current = selected.id;
+    virtualizer.scrollToIndex(idx, { align: "auto" });
+  }, [selected, rows, virtualizer]);
+
   const commitRename = (clusterId: number) => {
     if (editing && editing.id === clusterId) onRename(clusterId, editing.value);
     setEditing(null);

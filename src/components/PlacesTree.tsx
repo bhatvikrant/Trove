@@ -241,11 +241,17 @@ export function PlacesTree({
     onVisibleAssetsChange?.(visibleAssets);
   }, [visibleAssets, onVisibleAssetsChange]);
 
+  // When the selection changes from elsewhere (prev/next in the preview pane),
+  // move the focus ring to match and scroll the row into view — otherwise the
+  // tree sits still while the preview walks off the end of the visible window.
   useEffect(() => {
     if (!selected) return;
     const idx = rows.findIndex((r) => r.kind === "asset" && r.asset.id === selected.id);
-    if (idx >= 0 && rows[idx].key !== activeKey) setActiveKey(rows[idx].key);
-  }, [selected, rows, activeKey]);
+    if (idx >= 0 && rows[idx].key !== activeKey) {
+      setActiveKey(rows[idx].key);
+      virtualizer.scrollToIndex(idx, { align: "auto" });
+    }
+  }, [selected, rows, activeKey, virtualizer]);
 
   const items = virtualizer.getVirtualItems();
 
