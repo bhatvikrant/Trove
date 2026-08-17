@@ -233,6 +233,107 @@ export function PlacesTree({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusPlace]);
 
+  // ---- Keyboard navigation (mirrors the date tree) ----
+
+  // Move keyboard focus to a row, scroll it into view, and (for assets) preview
+  // it live — like arrowing through Photos.
+  const focusRow = useCallback(
+    (idx: number) => {
+      const clamped = Math.max(0, Math.min(rows.length - 1, idx));
+      const r = rows[clamped];
+      if (!r) return;
+      setActiveKey(r.key);
+      virtualizer.scrollToIndex(clamped, { align: "auto" });
+      if (r.kind === "asset") onSelect(r.asset);
+    },
+    [rows, virtualizer, onSelect]
+  );
+
+  // Nearest ancestor row = the closest previous row at a shallower depth.
+  const parentIndexOf = useCallback(
+    (idx: number) => {
+      const d = rows[idx].depth;
+      for (let i = idx - 1; i >= 0; i--) {
+        if (rows[i].depth < d) return i;
+      }
+      return -1;
+    },
+    [rows]
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!rows.length) return;
+      const curIdx = activeKey ? rows.findIndex((r) => r.key === activeKey) : -1;
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          focusRow(curIdx < 0 ? 0 : curIdx + 1);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          focusRow(curIdx < 0 ? 0 : curIdx - 1);
+          break;
+        case "Home":
+          e.preventDefault();
+          focusRow(0);
+          break;
+        case "End":
+          e.preventDefault();
+          focusRow(rows.length - 1);
+          break;
+        case "ArrowRight": {
+          e.preventDefault();
+          if (curIdx < 0) {
+            focusRow(0);
+            break;
+          }
+          const r = rows[curIdx];
+          if (r.kind === "asset" || r.kind === "loading") break;
+          if (!expanded.has(r.key)) onRowClick(r); // expand (loads its assets)
+          else focusRow(curIdx + 1); // already open → step into first child
+          break;
+        }
+        case "ArrowLeft": {
+          e.preventDefault();
+          if (curIdx < 0) {
+            focusRow(0);
+            break;
+          }
+          const r = rows[curIdx];
+          if (r.kind !== "asset" && r.kind !== "loading" && expanded.has(r.key)) {
+            toggle(r.key); // collapse
+          } else {
+            const p = parentIndexOf(curIdx);
+            if (p >= 0) focusRow(p); // hop to parent
+          }
+          break;
+        }
+        case "Enter":
+        case " ":
+          e.preventDefault();
+          if (curIdx < 0) focusRow(0);
+          else onRowClick(rows[curIdx]);
+          break;
+      }
+    },
+    [rows, activeKey, expanded, focusRow, parentIndexOf, onRowClick, toggle]
+  );
+
+  // Keep a valid focused row, and put focus on the tree once it has rows so the
+  // arrows work without a click first.
+  useEffect(() => {
+    if (!rows.length) return;
+    const valid = activeKey && rows.some((r) => r.key === activeKey);
+    if (!valid) {
+      setActiveKey(rows[0].key);
+      if (!activeKey) {
+        const ae = document.activeElement;
+        if (!ae || ae === document.body) scrollRef.current?.focus();
+      }
+    }
+  }, [rows, activeKey]);
+
   const visibleAssets = useMemo(
     () => rows.flatMap((r) => (r.kind === "asset" ? [r.asset] : [])),
     [rows]
@@ -266,7 +367,15 @@ export function PlacesTree({
   }
 
   return (
-    <div className="tree-scroll" ref={scrollRef}>
+    <div
+      className="tree-scroll"
+      ref={scrollRef}
+      tabIndex={0}
+      role="tree"
+      aria-label="Assets by place"
+      onKeyDown={handleKeyDown}
+      style={{ outline: "none" }}
+    >
       <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
         {items.map((vi) => {
           const row = rows[vi.index];
